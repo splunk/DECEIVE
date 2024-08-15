@@ -47,6 +47,13 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
         async for line in process.stdin:
             line = line.rstrip('\n')
             logger.info(f"INPUT: {line}")
+
+            # If the user is trying to log out, don't send that to the 
+            # LLM, just exit the session.
+            if line in ['exit', 'quit', 'logout']:
+                process.exit(0)
+
+            # Send the command to the LLM and give the response to the user
             llm_response = await with_message_history.ainvoke(
                 {
                     "messages": [HumanMessage(content=line)],
@@ -57,9 +64,11 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
 
             process.stdout.write(f"{llm_response.content}")
             logger.info(f"OUTPUT: {llm_response.content}")
+
     except asyncssh.BreakReceived:
         pass
 
+    # Just in case we ever get here, which we probably shouldn't
     process.exit(0)
 
 class MySSHServer(asyncssh.SSHServer):
@@ -139,6 +148,10 @@ f = ContextFilter()
 logger.addFilter(f)
 
 # Now get access to the LLM
+
+with open("prompt.txt", "r") as f:
+    llm_system_prompt = f.read()
+
 llm_model = ChatOpenAI(model="gpt-4o")
 
 llm_sessions = dict()
@@ -147,24 +160,7 @@ llm_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            '''
-            You are a linux operating system accepting commands from a user via SSH. 
-            Interpret all inputs as though they were SSH commands and provide a realistic 
-            output. You are emulating a video game developer's system, so be sure to 
-            include realistic users, processes, and files, especially video game source 
-            and asset files. Do not include extraneous formatting in your responses. 
-            
-            On the first call, be sure to include a realistic MOTD. 
-            
-            End all responses with a realistic shell prompt to display to the user, 
-            including a space at the end. 
-            
-            Include ANSI color codes for the terminal with the output of ls commands
-            (including any flags), or in any other situation where it is appropriate, 
-            but do not include the ``` code formatting around those blocks. 
-            
-            Assume the username is {username}.
-            '''
+            llm_system_prompt
         ),
         MessagesPlaceholder(variable_name="messages"),
     ]
