@@ -99,9 +99,15 @@ class MySSHServer(asyncssh.SSHServer):
         return ((pw != '*') and (password == pw))
 
 async def start_server() -> None:
-    await asyncssh.create_server(MySSHServer, '', 8022,
-                                 server_host_keys=['ssh_host_key'],
-                                 process_factory=handle_client)
+    await asyncssh.listen(
+        port=8022,
+        reuse_address=True,
+        reuse_port=True,
+        server_factory=MySSHServer,
+        server_host_keys=['ssh_host_key'],
+        process_factory=handle_client,
+        server_version="SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3"
+    )
 
 class ContextFilter(logging.Filter):
     """
