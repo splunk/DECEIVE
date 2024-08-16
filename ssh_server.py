@@ -10,6 +10,7 @@ from typing import Optional
 import logging
 import datetime
 import uuid
+from base64 import b64encode
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
@@ -41,7 +42,7 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
     )
 
     process.stdout.write(f"{llm_response.content}")
-    logger.info(f"OUTPUT: {llm_response.content}")
+    logger.info(f"OUTPUT: {b64encode(llm_response.content.encode('ascii')).decode('ascii')}")
 
     try:
         async for line in process.stdin:
@@ -63,7 +64,7 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
             )
 
             process.stdout.write(f"{llm_response.content}")
-            logger.info(f"OUTPUT: {llm_response.content}")
+            logger.info(f"OUTPUT: {b64encode(llm_response.content.encode('ascii')).decode('ascii')}")
 
     except asyncssh.BreakReceived:
         pass
