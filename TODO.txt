@@ -1,0 +1,3 @@
+* Log usernames for both successful and unsuccessful login attempts
+
+* Branch out to other protocols, such as SMTP or HTTP (REST API?)
