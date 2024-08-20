@@ -89,15 +89,31 @@ class MySSHServer(asyncssh.SSHServer):
             logger.info("SSH connection closed.")
 
     def begin_auth(self, username: str) -> bool:
-        # If the user's password is the empty string, no auth is required
-        return accounts.get(username) != ''
+        if accounts.get(username) != '':
+            logger.info(f"AUTH: User {username} attempting to authenticate.")
+            return True
+        else:
+            logger.info(f"AUTH: SUCCESS for user {username}.")
+            return False
 
     def password_auth_supported(self) -> bool:
         return True
+    def host_based_auth_supported(self) -> bool:
+        return False
+    def public_key_auth_supported(self) -> bool:
+        return False
+    def kbdinit_auth_supported(self) -> bool:
+        return False
 
     def validate_password(self, username: str, password: str) -> bool:
         pw = accounts.get(username, '*')
-        return ((pw != '*') and (password == pw))
+        
+        if ((pw != '*') and (password == pw)):
+            logger.info(f"AUTH: SUCCESS for user {username}.")
+            return True
+        else:
+            logger.info(f"AUTH: FAILED for user {username}.")
+            return False
 
 async def start_server() -> None:
     await asyncssh.listen(
