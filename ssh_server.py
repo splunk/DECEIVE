@@ -170,21 +170,15 @@ def choose_llm():
     model_name = config['llm'].get("model_name", "gpt-3.5-turbo")
 
     if llm_provider_name == 'openai':
-        print("***** Model: OpenAI")
-        print("***** Model Name: ", model_name)
         llm_model = ChatOpenAI(
             model=model_name
         )
     elif llm_provider_name == 'aws':
-        print("***** Model: AWS")
-        print("***** Model Name: ", model_name)
         llm_model = ChatBedrockConverse(
             model=model_name,
             region_name=config['llm'].get("aws_region", "us-east-1"),
             credentials_profile_name=config['llm'].get("aws_credentials_profile", "default")        )
     elif llm_provider_name == 'gemini':
-        print("***** Model: Gemini")
-        print("***** Model Name: ", model_name) 
         llm_model = ChatGoogleGenerativeAI(
             model=model_name,
         )
