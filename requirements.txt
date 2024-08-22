@@ -1,3 +1,13 @@
 langchain
 langchain_community
+# For OpenAI models
 langchain_openai
+# For Google's Gemini models
+langchain_google_genai
+
+# For AWS
+langchain_aws
+transformers
+torch
+# For anthropic models (via AWS)
+anthropic
