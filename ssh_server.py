@@ -1,31 +1,25 @@
 #!/usr/bin/env python3
 
+from configparser import ConfigParser
 import asyncio
 import asyncssh
 import sys
-import json 
+import json
 from typing import Optional
 import logging
 import datetime
 import uuid
 from base64 import b64encode
-
+from operator import itemgetter
+from configparser import ConfigParser
 from langchain_openai import ChatOpenAI
 from langchain_aws import ChatBedrock, ChatBedrockConverse
 from langchain_google_genai import ChatGoogleGenerativeAI
-
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage, trim_messages
 from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import SystemMessage, trim_messages
 from langchain_core.runnables import RunnablePassthrough
-
-from operator import itemgetter
-
-from configparser import ConfigParser
-
-
 
 async def handle_client(process: asyncssh.SSHServerProcess) -> None:
 # This is the main loop for handling SSH client connections. 
