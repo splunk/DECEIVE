@@ -85,7 +85,7 @@ class MySSHServer(asyncssh.SSHServer):
             logger.info(f"AUTH: User {username} attempting to authenticate.")
             return True
         else:
-            logger.info(f"AUTH: SUCCESS for user {username}.")
+            logger.info(f"AUTH: SUCCESS for user {username} with password ''.")
             return False
 
     def password_auth_supported(self) -> bool:
@@ -101,10 +101,10 @@ class MySSHServer(asyncssh.SSHServer):
         pw = accounts.get(username, '*')
         
         if ((pw != '*') and (password == pw)):
-            logger.info(f"AUTH: SUCCESS for user {username}.")
+            logger.info(f"AUTH: SUCCESS for user {username} with password '{password}'.")
             return True
         else:
-            logger.info(f"AUTH: FAILED for user {username}.")
+            logger.info(f"AUTH: FAILED for user {username} with password '{password}'.")
             return False
 
 async def start_server() -> None:
