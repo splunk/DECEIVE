@@ -3,6 +3,7 @@
 from configparser import ConfigParser
 import asyncio
 import asyncssh
+import threading
 import sys
 import json
 from typing import Optional
@@ -71,7 +72,18 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
 
 class MySSHServer(asyncssh.SSHServer):
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
-        logger.info(f"SSH connection received from {conn.get_extra_info('peername')[0]}.")
+        # Get the source and destination IPs and ports
+        (src_ip, src_port, _, _) = conn.get_extra_info('peername')
+        (dst_ip, dst_port, _, _) = conn.get_extra_info('sockname')
+
+        # Store the connection details in thread-local storage
+        thread_local.src_ip = src_ip
+        thread_local.src_port = src_port
+        thread_local.dst_ip = dst_ip
+        thread_local.dst_port = dst_port
+
+        # Log the connection details
+        logger.info(f"SSH connection received from {src_ip}/{src_port} to {dst_ip}/{dst_port}.")
 
     def connection_lost(self, exc: Optional[Exception]) -> None:
         if exc:
@@ -131,6 +143,11 @@ class ContextFilter(logging.Filter):
             task_name = task.get_name()
         else:
             task_name = "NONE"
+
+        record.src_ip = thread_local.__dict__.get('src_ip', '-')
+        record.src_port = thread_local.__dict__.get('src_port', '-')   
+        record.dst_ip = thread_local.__dict__.get('dst_ip', '-')
+        record.dst_port = thread_local.__dict__.get('dst_port', '-')
 
         record.task_name = task_name
 
@@ -196,7 +213,7 @@ logger.setLevel(logging.INFO)
 log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "ssh_log.log"))
 logger.addHandler(log_file_handler)
 
-log_file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s:%(task_name)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S. %Z"))
+log_file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s:%(task_name)s SSH [%(src_ip)s:%(src_port)s -> %(dst_ip)s:%(dst_port)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S. %Z"))
 
 f = ContextFilter()
 logger.addFilter(f)
@@ -241,6 +258,8 @@ with_message_history = RunnableWithMessageHistory(
     llm_get_session_history,
     input_messages_key="messages"
 )
+# Thread-local storage for connection details
+thread_local = threading.local()
 
 # Kick off the server!
 loop = asyncio.new_event_loop()
