@@ -1,3 +1,10 @@
-* Log usernames for both successful and unsuccessful login attempts
-
 * Branch out to other protocols, such as SMTP or HTTP (REST API?)
+* Sometimes the LLM hallucinates the user's future inputs, and acts as though the user typed them. The prompt section below tries to fix this, but doesn't seem to work well.  
+        Never include your guess at the next user command(s) in your output. Be sure to only emulate one input at a time, and to never anticipate what the user's next input will be. For each user input, only send the expected output and nothing else. For example, in the following Python interpreter snippet, the user typed 'exti', but the LLM incrorrectly responded with 'exit' and then simulated exiting the Python shell.  Do not do things like this.
+        guest@devserver:~$ python
+        Python 3.9.7 (default, Sep  3 2021, 12:37:55)
+        [GCC 7.5.0] on linux
+        Type "help", "copyright", "credits" or "license" for more information.
+        >>> exti
+        exit
+        guest@devserver:~$
