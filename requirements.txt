@@ -1,3 +1,6 @@
+# SSH server
+asyncssh
+# AI API framework
 langchain
 langchain_community
 # For OpenAI models
