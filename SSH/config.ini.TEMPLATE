@@ -1,0 +1,58 @@
+# THIS IS A TEMPLATE CONFIG FILE FOR HADES
+# We provide reasonable defaults for most configuration items, but you should 
+# review this before using it in production. 
+
+
+[honeypot]
+# The name of the file you wish to write the honeypot log to.
+log_file = ssh_log.log 
+
+# Settings for the SSH honeypot
+[ssh]
+# The port the SSH honeypot will listen on. You will probably want to set 
+# this to 22 for production use.
+port = 8022
+# The host key to use for the SSH server. This should be a private key.
+# See the README for how to generate this key.
+host_priv_key = ssh_host_key
+# The server version string to send to clients.
+server_version_string = SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3
+
+# Settings to configure which LLM backend to use.  Only one stanza 
+# should be uncommented at a time.
+[llm]
+##### OpenAI
+llm_provider = openai
+model_name = gpt-4o
+
+##### Any model via Amazon Bedrock
+# Valid AWS model names can be found here: https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html
+#llm_provider = AWS
+#model_name = anthropic.claude-3-5-sonnet-20240620-v1:0
+# NOTE: Bedrock is not supported on all AWS regions.
+#aws_region = us-east-1 
+#aws_credentials_profile = default
+
+##### Google Gemini
+#llm_provider = gemini
+#model_name = gemini-1.5-pro
+
+
+# The plain text file containing the LLM system prompt. 
+# This is required, no matter which LLM you use.
+system_prompt_file = prompt.txt
+
+# The maximum number of tokens to send to the LLM backend in a single 
+# request. This includes the message history for the session, so should
+# be fairly high. Not all models support large token counts, so be sure 
+# to test this with your model.
+trimmer_max_tokens = 64000
+
+# The valid user accounts and passwords for the SSH server, in the
+# form "username = password".  Note that you can enable login without 
+# a password by leaving that field blank (e.g., "guest =" on a line by
+# itself)
+[user_accounts]
+guest = 
+user1 = secretpw
+user2 = password123
