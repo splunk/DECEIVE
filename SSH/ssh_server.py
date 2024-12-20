@@ -21,6 +21,50 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 
+async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory):
+    # When the SSH session ends, ask the LLM to give a nice
+    # summary of the attacker's actions and probable intent,
+    # as well as a snap judgement about whether we should be 
+    # concerned or not.
+
+    prompt = '''
+Examine the list of all the SSH commands the user issued during
+this session. The user is likely (but not proven) to be an 
+attacker. Analyze the commands and provide the following:
+
+A concise, high-level description of what the user did during the 
+session, including whether this appears to be reconnaissance, 
+exploitation, post-foothold activity, or another stage of an attack. 
+Specify the likely goals of the user.
+
+A judgement of the session's nature as either "BENIGN," "SUSPICIOUS," 
+or "MALICIOUS," based on the observed activity.
+
+Ensure the high-level description accounts for the overall context and intent, 
+even if some commands seem benign in isolation.
+
+End your response with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]".
+
+Be very terse, but always include the high-level attacker's goal (e.g., 
+"post-foothold reconnaisance", "cryptomining", "data theft" or similar). 
+Also do not label the sections (except for the judgement, which you should 
+label clearly), and don't provide bullet points or item numbers. You do 
+not need to explain every command, just provide the highlights or 
+representative examples.
+'''
+
+    # Ask the LLM for its summary
+    llm_response = await session.ainvoke(
+        {
+            "messages": [HumanMessage(content=prompt)],
+            "username": process.get_extra_info('username')
+        },
+            config=llm_config
+    )
+
+    logger.info(f"---SESSION SUMMARY---\n{llm_response.content}\n")
+    process.exit(0)
+
 async def handle_client(process: asyncssh.SSHServerProcess) -> None:
 # This is the main loop for handling SSH client connections. 
 # Any user interaction should be done here.
@@ -57,7 +101,7 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
                     config=llm_config
             )
             if llm_response.content == "XXX-END-OF-SESSION-XXX":
-                process.exit(0)
+                await session_summary(process, llm_config, with_message_history)
             else:
                 process.stdout.write(f"{llm_response.content}")
                 logger.info(f"OUTPUT: {b64encode(llm_response.content.encode('ascii')).decode('ascii')}")
@@ -66,7 +110,7 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
         pass
 
     # Just in case we ever get here, which we probably shouldn't
-    process.exit(0)
+    # process.exit(0)
 
 class MySSHServer(asyncssh.SSHServer):
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
