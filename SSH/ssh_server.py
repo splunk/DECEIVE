@@ -139,7 +139,16 @@ representative examples.
             config=llm_config
     )
 
-    logger.info("Session summary", extra={"details": llm_response.content})
+    # Extract the judgement from the response
+    judgement = "UNKNOWN"
+    if "Judgement: BENIGN" in llm_response.content:
+        judgement = "BENIGN"
+    elif "Judgement: SUSPICIOUS" in llm_response.content:
+        judgement = "SUSPICIOUS"
+    elif "Judgement: MALICIOUS" in llm_response.content:
+        judgement = "MALICIOUS"
+
+    logger.info("Session summary", extra={"details": llm_response.content, "judgement": judgement})
     server.summary_generated = True
 
 async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer) -> None:
