@@ -21,7 +21,29 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 
+class JSONFormatter(logging.Formatter):
+    def format(self, record):
+        log_record = {
+            "timestamp": datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T", timespec="milliseconds"),
+            "level": record.levelname,
+            "task_name": record.task_name,
+            "src_ip": record.src_ip,
+            "src_port": record.src_port,
+            "dst_ip": record.dst_ip,
+            "dst_port": record.dst_port,
+            "message": record.getMessage()
+        }
+        # Include any additional fields from the extra dictionary
+        for key, value in record.__dict__.items():
+            if key not in log_record and key != 'args' and key != 'msg':
+                log_record[key] = value
+        return json.dumps(log_record)
+
 class MySSHServer(asyncssh.SSHServer):
+    def __init__(self):
+        super().__init__()
+        self.summary_generated = False
+
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
         # Get the source and destination IPs and ports
         (src_ip, src_port, _, _) = conn.get_extra_info('peername')
@@ -34,23 +56,23 @@ class MySSHServer(asyncssh.SSHServer):
         thread_local.dst_port = dst_port
 
         # Log the connection details
-        logger.info(f"SSH connection received from {src_ip}/{src_port} to {dst_ip}/{dst_port}.")
+        logger.info("SSH connection received", extra={"src_ip": src_ip, "src_port": src_port, "dst_ip": dst_ip, "dst_port": dst_port})
 
     def connection_lost(self, exc: Optional[Exception]) -> None:
         if exc:
-            logger.error('SSH connection error: ' + str(exc))
+            logger.error('SSH connection error', extra={"error": str(exc)})
         else:
-            logger.info("SSH connection closed.")
+            logger.info("SSH connection closed")
         # Ensure session summary is called on connection loss if attributes are set
         if hasattr(self, '_process') and hasattr(self, '_llm_config') and hasattr(self, '_session'):
-            asyncio.create_task(session_summary(self._process, self._llm_config, self._session))
+            asyncio.create_task(session_summary(self._process, self._llm_config, self._session, self))
 
     def begin_auth(self, username: str) -> bool:
         if accounts.get(username) != '':
-            logger.info(f"AUTH: User {username} attempting to authenticate.")
+            logger.info("User attempting to authenticate", extra={"username": username})
             return True
         else:
-            logger.info(f"AUTH: SUCCESS for user {username} with password ''.")
+            logger.info("Authentication success", extra={"username": username, "password": ""})
             return False
 
     def password_auth_supported(self) -> bool:
@@ -66,13 +88,17 @@ class MySSHServer(asyncssh.SSHServer):
         pw = accounts.get(username, '*')
         
         if ((pw != '*') and (password == pw)):
-            logger.info(f"AUTH: SUCCESS for user {username} with password '{password}'.")
+            logger.info("Authentication success", extra={"username": username, "password": password})
             return True
         else:
-            logger.info(f"AUTH: FAILED for user {username} with password '{password}'.")
+            logger.info("Authentication failed", extra={"username": username, "password": password})
             return False
 
-async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory):
+async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory, server: MySSHServer):
+    # Check if the summary has already been generated
+    if server.summary_generated:
+        return
+
     # When the SSH session ends, ask the LLM to give a nice
     # summary of the attacker's actions and probable intent,
     # as well as a snap judgement about whether we should be 
@@ -113,12 +139,12 @@ representative examples.
             config=llm_config
     )
 
-    logger.info(f"---SESSION SUMMARY---\n{llm_response.content}\n")
-    process.exit(0)
+    logger.info("Session summary", extra={"details": llm_response.content})
+    server.summary_generated = True
 
 async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer) -> None:
-# This is the main loop for handling SSH client connections. 
-# Any user interaction should be done here.
+    # This is the main loop for handling SSH client connections. 
+    # Any user interaction should be done here.
 
     # Give each session a unique name
     task_uuid = f"session-{uuid.uuid4()}"
@@ -136,7 +162,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
     )
 
     process.stdout.write(f"{llm_response.content}")
-    logger.info(f"OUTPUT: {b64encode(llm_response.content.encode('utf-8')).decode('utf-8')}")
+    logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8')})
 
     # Store process, llm_config, and session in the MySSHServer instance
     server._process = process
@@ -146,7 +172,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
     try:
         async for line in process.stdin:
             line = line.rstrip('\n')
-            logger.info(f"INPUT: {line}")
+            logger.info("User input", extra={"details": line})
 
             # Send the command to the LLM and give the response to the user
             llm_response = await with_message_history.ainvoke(
@@ -157,16 +183,18 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                     config=llm_config
             )
             if llm_response.content == "XXX-END-OF-SESSION-XXX":
-                await session_summary(process, llm_config, with_message_history)
+                await session_summary(process, llm_config, with_message_history, server)
+                process.exit(0)
                 return
             else:
                 process.stdout.write(f"{llm_response.content}")
-                logger.info(f"OUTPUT: {b64encode(llm_response.content.encode('utf-8')).decode('utf-8')}")
+                logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8')})
 
     except asyncssh.BreakReceived:
         pass
     finally:
-        await session_summary(process, llm_config, with_message_history)
+        await session_summary(process, llm_config, with_message_history, server)
+        process.exit(0)
 
     # Just in case we ever get here, which we probably shouldn't
     # process.exit(0)
@@ -251,7 +279,7 @@ def choose_llm():
 #### MAIN ####
 
 # Always use UTC for logging
-logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat(sep="T",timespec="milliseconds"))
+logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T",timespec="milliseconds"))
 
 # Read our configuration file
 config = ConfigParser()
@@ -267,7 +295,7 @@ logger.setLevel(logging.INFO)
 log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "ssh_log.log"))
 logger.addHandler(log_file_handler)
 
-log_file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(task_name)s SSH %(src_ip)s:%(src_port)s -> %(dst_ip)s:%(dst_port)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S. %Z"))
+log_file_handler.setFormatter(JSONFormatter())
 
 f = ContextFilter()
 logger.addFilter(f)
