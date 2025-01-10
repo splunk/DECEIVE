@@ -181,7 +181,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
     try:
         async for line in process.stdin:
             line = line.rstrip('\n')
-            logger.info("User input", extra={"details": line})
+            logger.info("User input", extra={"details": b64encode(line.encode('utf-8')).decode('utf-8')})
 
             # Send the command to the LLM and give the response to the user
             llm_response = await with_message_history.ainvoke(
