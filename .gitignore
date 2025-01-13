@@ -162,7 +162,7 @@ cython_debug/
 #.idea/
 
 # SSH Keys
-ssh_host_key
+*_host_key
 *.key 
 *.pub
 
