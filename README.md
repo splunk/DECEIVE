@@ -4,6 +4,8 @@ DECEIVE, the **Deceptive Emulation with Evaluative Integrated Validation Engine*
 
 This version of DECEIVE simulates a Linux server via the SSH protocol. It will log all the user inputs, the outputs returned by the LLM backend, as well as a summary of each session after they end. It'll even tell you if it thinks a users' session was benign, suspicious, or outright malicious.
 
+⛔️⛔️ **DECEIVE is a proof-of-concept project. It is not production quality. Try it, learn from it, but be cautious about deploying it in a production environment.** ⛔️⛔️
+
 ## Supported Host Platforms
 DECEIVE is primarily developed on MacOS 15 (Sequoia), but it should work on any UNIX-like system which can run Python3.  This includes other versions of MacOS, Linux, and even Windows (via Windows Subsystem for Linux). 
 
