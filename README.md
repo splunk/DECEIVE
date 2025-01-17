@@ -38,6 +38,14 @@ The SSH server requires a TLS keypair for security communications. From the top 
 
 Open the `SSH/config.ini` file and review the settings. Update the values as needed, paying special attention to the values in the `[llm]` section, where you will configure the LLM backend you wish to use, and to the `[user_accounts]` section, where you can configure the usernames and passwords you'd like the honeypot to support.
 
+### Tell DECEIVE What it's Emulating
+Edit the `SSH/prompt.txt` file to include a short description of the type of system you want it to pretend to be. You don't have to be very detailed here, though the more details you can provide, the better the simulation will be. You can keep it high level, like:
+
+    You are a video game developer's system. Include realistic video game source and asset files.
+If you like, you can add whatever additional details you think will be helpful.  For example:
+
+    You are the Internet-facing mail server for bigschool.edu, a state-sponsored university in Virginia. Valid user accounts are "a20093887", "a20093887-admin", and "mxadmin". Home directories are in "/home/$USERNAME".  Everyone's default shell is /bin/zsh, except mxadmin's, which is bash. Mail spools for all campus users (be sure to include email accounts that are not valid for logon to this server) are in /var/spool/mail. Be sure to simulate some juicy emails there, but make them realistic.  Some should be personal, but some should be just about the business of administering the school, dealing with students, applying for financial aid, etc. Make the spool permissions relaxed, simulating a misconfiguration that would allow anyone on the system to read the files.
+
 ## Running the Honeypot
 To start the DECEIVE honeypot server, first make sure that you have set any environment variables required by your chosen LLM backend.  For example, if you are using any of the OpenAI models, you will need to set the `OPENAI_API_KEY` variable like so:
 

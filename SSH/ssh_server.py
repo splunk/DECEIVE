@@ -285,6 +285,15 @@ def choose_llm():
 
     return llm_model
 
+def get_prompts() -> dict:
+    system_prompt = config['llm']['system_prompt']
+    with open("prompt.txt", "r") as f:
+        user_prompt = f.read()
+    return {
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt
+    }
+
 #### MAIN ####
 
 # Always use UTC for logging
@@ -311,9 +320,9 @@ logger.addFilter(f)
 
 # Now get access to the LLM
 
-prompt_file = config['llm'].get("system_prompt_file", "prompt.txt")
-with open(prompt_file, "r") as f:
-    llm_system_prompt = f.read()
+prompts = get_prompts()
+llm_system_prompt = prompts["system_prompt"]
+llm_user_prompt = prompts["user_prompt"]
 
 llm = choose_llm()
 
@@ -333,6 +342,10 @@ llm_prompt = ChatPromptTemplate.from_messages(
         (
             "system",
             llm_system_prompt
+        ),
+        (
+            "system",
+            llm_user_prompt
         ),
         MessagesPlaceholder(variable_name="messages"),
     ]
