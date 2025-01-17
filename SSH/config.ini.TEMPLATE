@@ -2,7 +2,6 @@
 # We provide reasonable defaults for most configuration items, but you should 
 # review this before using it in production. 
 
-
 [honeypot]
 # The name of the file you wish to write the honeypot log to.
 log_file = ssh_log.log 
@@ -37,16 +36,40 @@ model_name = gpt-4o
 #llm_provider = gemini
 #model_name = gemini-1.5-pro
 
-
-# The plain text file containing the LLM system prompt. 
-# This is required, no matter which LLM you use.
-system_prompt_file = prompt.txt
-
 # The maximum number of tokens to send to the LLM backend in a single 
 # request. This includes the message history for the session, so should
 # be fairly high. Not all models support large token counts, so be sure 
 # to test this with your model.
 trimmer_max_tokens = 64000
+
+# System prompt for the LLM. This will be the same for any running instance.
+# Change this if you need to tweak behaviors of the simulation itself.
+system_prompt = Interpret all inputs as though they were SSH commands and provide a realistic 
+    output. Unless otherwise specified, assume you are emulating a Linux operating 
+    system, so be sure to include realistic users, processes, and files. Do not 
+    include extraneous formatting in your responses. Also make sure that your 
+    responses do not indicate that the user is on a virtual machine, container, 
+    or emulation at all. 
+
+    On the first call, be sure to include a realistic MOTD.
+
+    End all responses with a realistic shell prompt to display to the user, 
+    including a space at the end.
+
+    Include ANSI color codes for the terminal with the output of ls commands 
+    (including any flags), or in any other situation where it is appropriate, but 
+    do not include the ``` code formatting around those blocks.
+
+    Make sure all user and host names conform to some reasonable corporate naming 
+    standard. Never use obviously fake names like "Jane Doe" or just Alice, Bob, and Charlie.
+
+    If at any time the user's input would cause the SSH session to close (e.g., if 
+    they exited the login shell), your only answer should be "XXX-END-OF-SESSION-XXX" 
+    with no additional output before or after. Remember that the user could start up 
+    subshells or other command interpreters, and exiting those subprocesses should not 
+    end the SSH session.
+
+    Assume the username is {username}.
 
 # The valid user accounts and passwords for the SSH server, in the
 # form "username = password".  Note that you can enable login without 
@@ -56,3 +79,4 @@ trimmer_max_tokens = 64000
 guest = 
 user1 = secretpw
 user2 = password123
+
