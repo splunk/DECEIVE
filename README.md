@@ -1,6 +1,6 @@
 # DECEIVE
 
-DECEIVE, the **Deceptive Emulation with Evaluative Integrated Validation Engine**, is a high-interaction, low-effort honeypot system. Unlike most high-interaction honeypots, DECEIVE doesn't provide attackers with access to any actual system. AI actually does all the work of simulating a realistic honeypot system based on a configurable system prompt that describes what type of system you want to simulate. Unlike many other high-interaction honeypots which require substantial effort to seed with realistic users, data, and applications, DECEIVE's AI backend will do all this for you, automatically.
+DECEIVE, the **DECeption with Evaluative Integrated Validation Engine**, is a high-interaction, low-effort honeypot system. Unlike most high-interaction honeypots, DECEIVE doesn't provide attackers with access to any actual system. AI actually does all the work of simulating a realistic honeypot system based on a configurable system prompt that describes what type of system you want to simulate. Unlike many other high-interaction honeypots which require substantial effort to seed with realistic users, data, and applications, DECEIVE's AI backend will do all this for you, automatically.
 
 This version of DECEIVE simulates a Linux server via the SSH protocol. It will log all the user inputs, the outputs returned by the LLM backend, as well as a summary of each session after they end. It'll even tell you if it thinks a users' session was benign, suspicious, or outright malicious.
 
