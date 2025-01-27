@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
 from configparser import ConfigParser
+import argparse
 import asyncio
 import asyncssh
 import threading
 import sys
 import json
+import os
 from typing import Optional
 import logging
 import datetime
@@ -285,10 +287,24 @@ def choose_llm():
 
     return llm_model
 
-def get_prompts() -> dict:
+def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
     system_prompt = config['llm']['system_prompt']
-    with open("prompt.txt", "r") as f:
-        user_prompt = f.read()
+    if prompt is not None:
+        if not prompt.strip():
+            print("Error: The prompt text cannot be empty.", file=sys.stderr)
+            sys.exit(1)
+        user_prompt = prompt
+    elif prompt_file:
+        if not os.path.exists(prompt_file):
+            print(f"Error: The specified prompt file '{prompt_file}' does not exist.", file=sys.stderr)
+            sys.exit(1)
+        with open(prompt_file, "r") as f:
+            user_prompt = f.read()
+    elif os.path.exists("prompt.txt"):
+        with open("prompt.txt", "r") as f:
+            user_prompt = f.read()
+    else:
+        raise ValueError("Either prompt or prompt_file must be provided.")
     return {
         "system_prompt": system_prompt,
         "user_prompt": user_prompt
@@ -296,12 +312,24 @@ def get_prompts() -> dict:
 
 #### MAIN ####
 
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Start the SSH honeypot server.')
+parser.add_argument('-c', '--config', type=str, default='config.ini', help='Path to the configuration file')
+parser.add_argument('-p', '--prompt', type=str, help='The entire text of the prompt')
+parser.add_argument('-f', '--prompt-file', type=str, default='prompt.txt', help='Path to the prompt file')
+args = parser.parse_args()
+
+# Check if the config file exists
+if not os.path.exists(args.config):
+    print(f"Error: The specified config file '{args.config}' does not exist.", file=sys.stderr)
+    sys.exit(1)
+
 # Always use UTC for logging
 logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T",timespec="milliseconds"))
 
 # Read our configuration file
 config = ConfigParser()
-config.read("config.ini")
+config.read(args.config)
 
 # Read the user accounts from the configuration file
 accounts = get_user_accounts()
@@ -320,7 +348,7 @@ logger.addFilter(f)
 
 # Now get access to the LLM
 
-prompts = get_prompts()
+prompts = get_prompts(args.prompt, args.prompt_file)
 llm_system_prompt = prompts["system_prompt"]
 llm_user_prompt = prompts["user_prompt"]
 
