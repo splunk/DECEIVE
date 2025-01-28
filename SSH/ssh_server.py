@@ -8,6 +8,7 @@ import threading
 import sys
 import json
 import os
+import traceback
 from typing import Optional
 import logging
 import datetime
@@ -63,6 +64,7 @@ class MySSHServer(asyncssh.SSHServer):
     def connection_lost(self, exc: Optional[Exception]) -> None:
         if exc:
             logger.error('SSH connection error', extra={"error": str(exc)})
+            traceback.print_exception(exc)
         else:
             logger.info("SSH connection closed")
         # Ensure session summary is called on connection loss if attributes are set
