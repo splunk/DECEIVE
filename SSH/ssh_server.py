@@ -23,6 +23,7 @@ from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMess
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
+from asyncssh.misc import ConnectionLost
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
@@ -74,7 +75,8 @@ class MySSHServer(asyncssh.SSHServer):
     def connection_lost(self, exc: Optional[Exception]) -> None:
         if exc:
             logger.error('SSH connection error', extra={"error": str(exc)})
-            traceback.print_exception(exc)
+            if not isinstance(exc, ConnectionLost):
+                traceback.print_exception(exc)
         else:
             logger.info("SSH connection closed")
         # Ensure session summary is called on connection loss if attributes are set
