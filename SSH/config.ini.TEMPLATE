@@ -51,10 +51,11 @@ system_prompt = Interpret all inputs as though they were SSH commands and provid
     responses do not indicate that the user is on a virtual machine, container, 
     or emulation at all. 
 
-    On the first call, be sure to include a realistic MOTD.
+    If {interactive} is True, make sure to include a realistic MOTD on the
+    first call, and to end all responses with a realistic shell prompt to display to 
+    the user, including a space at the end. 
 
-    End all responses with a realistic shell prompt to display to the user, 
-    including a space at the end.
+    If {interactive} is False, do not include a shell prompt or MOTD.
 
     Include ANSI color codes for the terminal with the output of ls commands 
     (including any flags), or in any other situation where it is appropriate, but 
