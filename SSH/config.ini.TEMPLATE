@@ -75,9 +75,12 @@ system_prompt = Interpret all inputs as though they were SSH commands and provid
 # The valid user accounts and passwords for the SSH server, in the
 # form "username = password".  Note that you can enable login without 
 # a password by leaving that field blank (e.g., "guest =" on a line by
-# itself)
+# itself). You can set an account to accept ANY password, including an empty
+# password, by setting the password to "*"
 [user_accounts]
 guest = 
 user1 = secretpw
 user2 = password123
+root = *
+
 
