@@ -195,7 +195,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                     config=llm_config
             )
             process.stdout.write(f"{llm_response.content}")
-            logger.info("LLM response 1", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
+            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
             await session_summary(process, llm_config, with_message_history, server)
             process.exit(0)
         else:
@@ -210,7 +210,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
             )
 
             process.stdout.write(f"{llm_response.content}")
-            logger.info("LLM response 2", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
+            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
 
             async for line in process.stdin:
                 line = line.rstrip('\n')
@@ -231,7 +231,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                     return
                 else:
                     process.stdout.write(f"{llm_response.content}")
-                    logger.info("LLM response 3", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
+                    logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
 
     except asyncssh.BreakReceived:
         pass
