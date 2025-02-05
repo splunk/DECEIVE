@@ -93,8 +93,8 @@ Things to note:
     * `Session summary`
     * `SSH connection closed`
 * Several of these message types also feature a `details` field with additional information
-    * `User input` messages contain a base64-encoded copy of the entire user input
-    * `LLM response` messages contain a base64-encoded copy of the entire simulated response
+    * `User input` messages contain a base64-encoded copy of the entire user input in the `details` field, as well as an `interactive` field (true/false) that tells you whether this was an interactive or non-interactive command (i.e., whether they logged in with a terminal session or provided a command on the SSH command-line).
+    * `LLM response` messages contain a base64-encoded copy of the entire simulated response in the `details` field.
     * `Session summary` messages contain not only a summary of the commands, but also a guess as to what they might have been intended to accomplish. There will also be a `judgement` field that contains one of "BENIGN", "SUSPICIOUS", or "MALICIOUS"
 * Since this is a honeypot and not intended for use by real users, IT WILL LOG USERNAMES AND PASSWORDS! These are found in the `Authentication success` messages, in the `username` and `password` fields.
 
