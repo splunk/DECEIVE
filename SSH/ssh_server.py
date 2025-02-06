@@ -24,8 +24,13 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from asyncssh.misc import ConnectionLost
+import socket
 
 class JSONFormatter(logging.Formatter):
+    def __init__(self, sensor_name, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sensor_name = sensor_name
+
     def format(self, record):
         log_record = {
             "timestamp": datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T", timespec="milliseconds"),
@@ -35,7 +40,9 @@ class JSONFormatter(logging.Formatter):
             "src_port": record.src_port,
             "dst_ip": record.dst_ip,
             "dst_port": record.dst_port,
-            "message": record.getMessage()
+            "message": record.getMessage(),
+            "sensor_name": self.sensor_name,
+            "sensor_protocol": "ssh"
         }
         if hasattr(record, 'interactive'):
             log_record["interactive"] = record.interactive
@@ -168,6 +175,7 @@ representative examples.
         judgement = "MALICIOUS"
 
     logger.info("Session summary", extra={"details": llm_response.content, "judgement": judgement})
+
     server.summary_generated = True
 
 async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer) -> None:
@@ -277,7 +285,7 @@ class ContextFilter(logging.Filter):
         record.dst_port = thread_local.__dict__.get('dst_port', '-')
 
         record.task_name = task_name
-
+        
         return True
 
 def llm_get_session_history(session_id: str) -> BaseChatMessageHistory:
@@ -367,6 +375,9 @@ try:
     # Read the user accounts from the configuration file
     accounts = get_user_accounts()
 
+    # Get the sensor name from the config or use the system's hostname
+    sensor_name = config['honeypot'].get('sensor_name', socket.gethostname())
+
     # Set up the honeypot logger
     logger = logging.getLogger(__name__)  
     logger.setLevel(logging.INFO)  
@@ -374,7 +385,7 @@ try:
     log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "ssh_log.log"))
     logger.addHandler(log_file_handler)
 
-    log_file_handler.setFormatter(JSONFormatter())
+    log_file_handler.setFormatter(JSONFormatter(sensor_name))
 
     f = ContextFilter()
     logger.addFilter(f)

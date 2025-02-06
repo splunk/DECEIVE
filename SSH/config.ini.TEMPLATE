@@ -6,6 +6,10 @@
 # The name of the file you wish to write the honeypot log to.
 log_file = ssh_log.log 
 
+# The name of the sensor, used to identify this honeypot in the logs.
+# If you leave this blank, the honeypot will use the system's hostname.
+sensor_name = deceive
+
 # Settings for the SSH honeypot
 [ssh]
 # The port the SSH honeypot will listen on. You will probably want to set 
