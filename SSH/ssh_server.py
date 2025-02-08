@@ -18,6 +18,7 @@ from operator import itemgetter
 from langchain_openai import ChatOpenAI
 from langchain_aws import ChatBedrock, ChatBedrockConverse
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_ollama import ChatOllama 
 from langchain_core.messages import HumanMessage, SystemMessage, trim_messages
 from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
@@ -311,6 +312,10 @@ def choose_llm():
 
     if llm_provider_name == 'openai':
         llm_model = ChatOpenAI(
+            model=model_name
+        )
+    elif llm_provider_name == 'ollama':
+            llm_model = ChatOllama(
             model=model_name
         )
     elif llm_provider_name == 'aws':
