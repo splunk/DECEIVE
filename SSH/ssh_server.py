@@ -194,7 +194,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
         if process.command:
             # Handle non-interactive command execution
             command = process.command
-            logger.info("User input", extra={"details": b64encode(command.encode('utf-8')).decode('utf-8'), "interactive": False})
+            logger.info("User input", extra={"details": command.encode('utf-8').decode('utf-8'), "interactive": False})
             llm_response = await with_message_history.ainvoke(
                 {
                     "messages": [HumanMessage(content=command)],
