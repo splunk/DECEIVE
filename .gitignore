@@ -168,5 +168,3 @@ cython_debug/
 
 # config files
 *.ini 
-#logViewer
-/LogViewer
