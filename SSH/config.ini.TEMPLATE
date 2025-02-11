@@ -29,8 +29,8 @@ llm_provider = openai
 model_name = gpt-4o
 
 ##### ollama llama3
-#llm_provider = ollama
-#model_name = llama3.3
+llm_provider = ollama
+model_name = llama3.3
 
 ##### Any model via Amazon Bedrock
 # Valid AWS model names can be found here: https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html
