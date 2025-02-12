@@ -7,7 +7,8 @@ langchain_community
 langchain_openai
 # For Google's Gemini models
 langchain_google_genai
-
+# For Ollama models
+langchain_ollama
 # For AWS
 langchain_aws
 transformers
