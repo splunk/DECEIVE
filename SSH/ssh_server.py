@@ -278,7 +278,7 @@ class ContextFilter(logging.Filter):
         if task:
             task_name = task.get_name()
         else:
-            task_name = "-"
+            task_name = thread_local.__dict__.get('session_id', '-')
 
         record.src_ip = thread_local.__dict__.get('src_ip', '-')
         record.src_port = thread_local.__dict__.get('src_port', '-')   
@@ -305,10 +305,10 @@ def get_user_accounts() -> dict:
 
     return accounts
 
-def choose_llm():
-    llm_provider_name = config['llm'].get("llm_provider", "openai")
+def choose_llm(llm_provider: Optional[str] = None, model_name: Optional[str] = None):
+    llm_provider_name = llm_provider or config['llm'].get("llm_provider", "openai")
     llm_provider_name = llm_provider_name.lower()
-    model_name = config['llm'].get("model_name", "gpt-3.5-turbo")
+    model_name = model_name or config['llm'].get("model_name", "gpt-3.5-turbo")
 
     if llm_provider_name == 'openai':
         llm_model = ChatOpenAI(
@@ -363,6 +363,15 @@ try:
     parser.add_argument('-c', '--config', type=str, default='config.ini', help='Path to the configuration file')
     parser.add_argument('-p', '--prompt', type=str, help='The entire text of the prompt')
     parser.add_argument('-f', '--prompt-file', type=str, default='prompt.txt', help='Path to the prompt file')
+    parser.add_argument('-l', '--llm-provider', type=str, help='The LLM provider to use')
+    parser.add_argument('-m', '--model-name', type=str, help='The model name to use')
+    parser.add_argument('-t', '--trimmer-max-tokens', type=int, help='The maximum number of tokens to send to the LLM backend in a single request')
+    parser.add_argument('-s', '--system-prompt', type=str, help='System prompt for the LLM')
+    parser.add_argument('-P', '--port', type=int, help='The port the SSH honeypot will listen on')
+    parser.add_argument('-k', '--host-priv-key', type=str, help='The host key to use for the SSH server')
+    parser.add_argument('-v', '--server-version-string', type=str, help='The server version string to send to clients')
+    parser.add_argument('-L', '--log-file', type=str, help='The name of the file you wish to write the honeypot log to')
+    parser.add_argument('-S', '--sensor-name', type=str, help='The name of the sensor, used to identify this honeypot in the logs')
     args = parser.parse_args()
 
     # Check if the config file exists
@@ -376,6 +385,26 @@ try:
     # Read our configuration file
     config = ConfigParser()
     config.read(args.config)
+
+    # Override config values with command line arguments if provided
+    if args.llm_provider:
+        config['llm']['llm_provider'] = args.llm_provider
+    if args.model_name:
+        config['llm']['model_name'] = args.model_name
+    if args.trimmer_max_tokens:
+        config['llm']['trimmer_max_tokens'] = str(args.trimmer_max_tokens)
+    if args.system_prompt:
+        config['llm']['system_prompt'] = args.system_prompt
+    if args.port:
+        config['ssh']['port'] = str(args.port)
+    if args.host_priv_key:
+        config['ssh']['host_priv_key'] = args.host_priv_key
+    if args.server_version_string:
+        config['ssh']['server_version_string'] = args.server_version_string
+    if args.log_file:
+        config['honeypot']['log_file'] = args.log_file
+    if args.sensor_name:
+        config['honeypot']['sensor_name'] = args.sensor_name
 
     # Read the user accounts from the configuration file
     accounts = get_user_accounts()
@@ -401,7 +430,7 @@ try:
     llm_system_prompt = prompts["system_prompt"]
     llm_user_prompt = prompts["user_prompt"]
 
-    llm = choose_llm()
+    llm = choose_llm(config['llm'].get("llm_provider"), config['llm'].get("model_name"))
 
     llm_sessions = dict()
 
