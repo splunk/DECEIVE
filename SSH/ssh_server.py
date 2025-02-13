@@ -360,7 +360,7 @@ def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
 try:
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Start the SSH honeypot server.')
-    parser.add_argument('-c', '--config', type=str, default='config.ini', help='Path to the configuration file')
+    parser.add_argument('-c', '--config', type=str, default=None, help='Path to the configuration file')
     parser.add_argument('-p', '--prompt', type=str, help='The entire text of the prompt')
     parser.add_argument('-f', '--prompt-file', type=str, default='prompt.txt', help='Path to the prompt file')
     parser.add_argument('-l', '--llm-provider', type=str, help='The LLM provider to use')
@@ -372,19 +372,27 @@ try:
     parser.add_argument('-v', '--server-version-string', type=str, help='The server version string to send to clients')
     parser.add_argument('-L', '--log-file', type=str, help='The name of the file you wish to write the honeypot log to')
     parser.add_argument('-S', '--sensor-name', type=str, help='The name of the sensor, used to identify this honeypot in the logs')
+    parser.add_argument('-u', '--user-account', action='append', help='User account in the form username=password. Can be repeated.')
     args = parser.parse_args()
 
-    # Check if the config file exists
-    if not os.path.exists(args.config):
-        print(f"Error: The specified config file '{args.config}' does not exist.", file=sys.stderr)
-        sys.exit(1)
-
-    # Always use UTC for logging
-    logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T",timespec="milliseconds"))
-
-    # Read our configuration file
+    # Determine which config file to load
     config = ConfigParser()
-    config.read(args.config)
+    if args.config is not None:
+        # User explicitly set a config file; error if it doesn't exist.
+        if not os.path.exists(args.config):
+            print(f"Error: The specified config file '{args.config}' does not exist.", file=sys.stderr)
+            sys.exit(1)
+        config.read(args.config)
+    else:
+        default_config = "config.ini"
+        if os.path.exists(default_config):
+            config.read(default_config)
+        else:
+            # Use defaults when no config file found.
+            config['honeypot'] = {'log_file': 'ssh_log.log', 'sensor_name': socket.gethostname()}
+            config['ssh'] = {'port': '8022', 'host_priv_key': 'ssh_host_key', 'server_version_string': 'SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3'}
+            config['llm'] = {'llm_provider': 'openai', 'model_name': 'gpt-3.5-turbo', 'trimmer_max_tokens': '64000', 'system_prompt': ''}
+            config['user_accounts'] = {}
 
     # Override config values with command line arguments if provided
     if args.llm_provider:
@@ -406,8 +414,22 @@ try:
     if args.sensor_name:
         config['honeypot']['sensor_name'] = args.sensor_name
 
-    # Read the user accounts from the configuration file
+    # Merge command-line user accounts into the config
+    if args.user_account:
+        if 'user_accounts' not in config:
+            config['user_accounts'] = {}
+        for account in args.user_account:
+            if '=' in account:
+                key, value = account.split('=', 1)
+                config['user_accounts'][key.strip()] = value.strip()
+            else:
+                config['user_accounts'][account.strip()] = ''
+
+    # Read the user accounts from the configuration
     accounts = get_user_accounts()
+
+    # Always use UTC for logging
+    logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T",timespec="milliseconds"))
 
     # Get the sensor name from the config or use the system's hostname
     sensor_name = config['honeypot'].get('sensor_name', socket.gethostname())
