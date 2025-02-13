@@ -18,8 +18,10 @@ port = 8022
 # The host key to use for the SSH server. This should be a private key.
 # See the README for how to generate this key.
 host_priv_key = ssh_host_key
-# The server version string to send to clients.
-server_version_string = SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3
+# The server version string to send to clients. The SSH server automatically 
+# prepends "SSH-2.0-" to this. So "OpenSSH_8.2p1 Ubuntu-4ubuntu0.3" will 
+# be transformed to "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3".
+server_version_string = OpenSSH_8.2p1 Ubuntu-4ubuntu0.3
 
 # Settings to configure which LLM backend to use.  Only one stanza 
 # should be uncommented at a time.
