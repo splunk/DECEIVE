@@ -13,7 +13,6 @@ from typing import Optional
 import logging
 import datetime
 import uuid
-import random
 from base64 import b64encode
 from operator import itemgetter
 from langchain_openai import ChatOpenAI
@@ -111,35 +110,15 @@ class MySSHServer(asyncssh.SSHServer):
     def kbdinit_auth_supported(self) -> bool:
         return False
 
-
     def validate_password(self, username: str, password: str) -> bool:
-        """Authenticate user, with a chance-based success for wildcard passwords."""
-        pw = accounts.get(username, '*')  # Get stored password or wildcard (*)
-
-        # Fetch wildcard success rate safely from config, with a default of 30%
-        try:
-            wildcard_success_rate = float(config.get('authentication', 'wildcard_success_rate', fallback="0.3"))
-        except ValueError:
-            wildcard_success_rate = 0.3  # Default to 30% if there's an issue
-
-        # Wildcard password handling with probability-based success
-        if pw == '*':
-            if random.random() < wildcard_success_rate:  # Chance-based success
-                logger.info("Wildcard authentication success", extra={"username": username, "password": password})
-                return True
-            else:
-                logger.info("Wildcard authentication failed (random chance)", extra={"username": username, "password": password})
-                return False
-
-        # Regular password validation
-        if password == pw:
+        pw = accounts.get(username, '*')
+        
+        if pw == '*' or (pw != '*' and password == pw):
             logger.info("Authentication success", extra={"username": username, "password": password})
             return True
         else:
             logger.info("Authentication failed", extra={"username": username, "password": password})
             return False
-
-
 
 async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory, server: MySSHServer):
     # Check if the summary has already been generated
@@ -201,6 +180,10 @@ representative examples.
     server.summary_generated = True
 
 async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer) -> None:
+    # This is the main loop for handling SSH client connections. 
+    # Any user interaction should be done here.
+
+    # Give each session a unique name
     task_uuid = f"session-{uuid.uuid4()}"
     current_task = asyncio.current_task()
     current_task.set_name(task_uuid)
@@ -209,75 +192,64 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
 
     try:
         if process.command:
+            # Handle non-interactive command execution
             command = process.command
             logger.info("User input", extra={"details": b64encode(command.encode('utf-8')).decode('utf-8'), "interactive": False})
-
             llm_response = await with_message_history.ainvoke(
                 {
                     "messages": [HumanMessage(content=command)],
                     "username": process.get_extra_info('username'),
                     "interactive": False
                 },
-                config=llm_config
+                    config=llm_config
             )
-
-            try:
-                process.stdout.write(f"{llm_response.content}")
-                logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
-            except BrokenPipeError:
-                logger.warning("BrokenPipeError: SSH client disconnected mid-session. Ignoring output.")
-
+            process.stdout.write(f"{llm_response.content}")
+            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
             await session_summary(process, llm_config, with_message_history, server)
             process.exit(0)
-
         else:
+            # Handle interactive session
             llm_response = await with_message_history.ainvoke(
                 {
                     "messages": [HumanMessage(content="ignore this message")],
                     "username": process.get_extra_info('username'),
                     "interactive": True
                 },
-                config=llm_config
+                    config=llm_config
             )
 
-            try:
-                process.stdout.write(f"{llm_response.content}")
-                logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
-            except BrokenPipeError:
-                logger.warning("BrokenPipeError: SSH client disconnected mid-session. Ignoring output.")
+            process.stdout.write(f"{llm_response.content}")
+            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
 
             async for line in process.stdin:
                 line = line.rstrip('\n')
                 logger.info("User input", extra={"details": b64encode(line.encode('utf-8')).decode('utf-8'), "interactive": True})
 
+                # Send the command to the LLM and give the response to the user
                 llm_response = await with_message_history.ainvoke(
                     {
                         "messages": [HumanMessage(content=line)],
                         "username": process.get_extra_info('username'),
                         "interactive": True
                     },
-                    config=llm_config
+                        config=llm_config
                 )
-
                 if llm_response.content == "XXX-END-OF-SESSION-XXX":
                     await session_summary(process, llm_config, with_message_history, server)
                     process.exit(0)
                     return
-
-                try:
+                else:
                     process.stdout.write(f"{llm_response.content}")
                     logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
-                except BrokenPipeError:
-                    logger.warning("BrokenPipeError: SSH client disconnected mid-session. Ignoring output.")
-                    break  # Stop processing if the client has disconnected
 
     except asyncssh.BreakReceived:
         pass
-
     finally:
         await session_summary(process, llm_config, with_message_history, server)
         process.exit(0)
 
+    # Just in case we ever get here, which we probably shouldn't
+    # process.exit(0)
 
 async def start_server() -> None:
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
