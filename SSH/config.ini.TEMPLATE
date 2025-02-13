@@ -90,5 +90,9 @@ guest =
 user1 = secretpw
 user2 = password123
 root = *
+admin = admin
 
+
+[authentication]
+wildcard_success_rate = 0.3  # 30% chance of success per attempt
 

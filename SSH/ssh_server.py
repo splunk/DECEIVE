@@ -13,6 +13,7 @@ from typing import Optional
 import logging
 import datetime
 import uuid
+import random
 from base64 import b64encode
 from operator import itemgetter
 from langchain_openai import ChatOpenAI
@@ -111,14 +112,25 @@ class MySSHServer(asyncssh.SSHServer):
         return False
 
     def validate_password(self, username: str, password: str) -> bool:
-        pw = accounts.get(username, '*')
-        
-        if pw == '*' or (pw != '*' and password == pw):
+        """Authenticate user, with a chance-based success for wildcard passwords."""
+        pw = accounts.get(username, '*')  # Get stored password or wildcard (*)
+        wildcard_success_rate = config['authentication'].getfloat("wildcard_success_rate", 0.3)  # Default 30%
+
+        if pw == '*':  # Wildcard password logic
+            if random.random() < wildcard_success_rate:  # Success chance
+                logger.info("Wildcard authentication success", extra={"username": username, "password": password})
+                return True
+            else:
+                logger.info("Wildcard authentication failed (random chance)", extra={"username": username, "password": password})
+                return False
+
+        elif password == pw:  # Normal authentication
             logger.info("Authentication success", extra={"username": username, "password": password})
             return True
         else:
             logger.info("Authentication failed", extra={"username": username, "password": password})
             return False
+
 
 async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory, server: MySSHServer):
     # Check if the summary has already been generated
