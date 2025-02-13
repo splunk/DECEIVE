@@ -201,79 +201,79 @@ representative examples.
     server.summary_generated = True
 
 
-    async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer) -> None:
-        # This is the main loop for handling SSH client connections.
-        # Any user interaction should be done here.
+async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer) -> None:
+    # This is the main loop for handling SSH client connections.
+    # Any user interaction should be done here.
 
-        # Give each session a unique name
-        task_uuid = f"session-{uuid.uuid4()}"
-        current_task = asyncio.current_task()
-        current_task.set_name(task_uuid)
+    # Give each session a unique name
+    task_uuid = f"session-{uuid.uuid4()}"
+    current_task = asyncio.current_task()
+    current_task.set_name(task_uuid)
 
-        llm_config = {"configurable": {"session_id": task_uuid}}
+    llm_config = {"configurable": {"session_id": task_uuid}}
 
-        try:
-            if process.command:
-                # Handle non-interactive command execution
-                command = process.command
-                logger.info("User input", extra={"details": b64encode(command.encode('utf-8')).decode('utf-8'), "interactive": False})
-                llm_response = await with_message_history.ainvoke(
-                    {
-                        "messages": [HumanMessage(content=command)],
-                        "username": process.get_extra_info('username'),
-                        "interactive": False
-                    },
-                    config=llm_config
-                )
-                process.stdout.write(f"{llm_response.content}")
-                logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
-                await session_summary(process, llm_config, with_message_history, server)
-                process.exit(0)
-            else:
-                # Handle interactive session
-                llm_response = await with_message_history.ainvoke(
-                    {
-                        "messages": [HumanMessage(content="ignore this message")],
-                        "username": process.get_extra_info('username'),
-                        "interactive": True
-                    },
-                    config=llm_config
-                )
-
-                process.stdout.write(f"{llm_response.content}")
-                logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
-
-                try:
-                    async for line in process.stdin:
-                        line = line.rstrip('\n')
-                        logger.info("User input", extra={"details": b64encode(line.encode('utf-8')).decode('utf-8'), "interactive": True})
-
-                        # Send the command to the LLM and give the response to the user
-                        llm_response = await with_message_history.ainvoke(
-                            {
-                                "messages": [HumanMessage(content=line)],
-                                "username": process.get_extra_info('username'),
-                                "interactive": True
-                            },
-                            config=llm_config
-                        )
-                        if llm_response.content == "XXX-END-OF-SESSION-XXX":
-                            await session_summary(process, llm_config, with_message_history, server)
-                            process.exit(0)
-                            return
-                        else:
-                            process.stdout.write(f"{llm_response.content}")
-                            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
-
-                except asyncssh.misc.TerminalSizeChanged:
-                    logger.warning("SSH client changed terminal size. Ignoring and continuing.")
-                    pass  # Ignore this error and keep running
-
-        except asyncssh.BreakReceived:
-            pass
-        finally:
+    try:
+        if process.command:
+            # Handle non-interactive command execution
+            command = process.command
+            logger.info("User input", extra={"details": b64encode(command.encode('utf-8')).decode('utf-8'), "interactive": False})
+            llm_response = await with_message_history.ainvoke(
+                {
+                    "messages": [HumanMessage(content=command)],
+                    "username": process.get_extra_info('username'),
+                    "interactive": False
+                },
+                config=llm_config
+            )
+            process.stdout.write(f"{llm_response.content}")
+            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
             await session_summary(process, llm_config, with_message_history, server)
             process.exit(0)
+        else:
+            # Handle interactive session
+            llm_response = await with_message_history.ainvoke(
+                {
+                    "messages": [HumanMessage(content="ignore this message")],
+                    "username": process.get_extra_info('username'),
+                    "interactive": True
+                },
+                config=llm_config
+            )
+
+            process.stdout.write(f"{llm_response.content}")
+            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
+
+            try:
+                async for line in process.stdin:
+                    line = line.rstrip('\n')
+                    logger.info("User input", extra={"details": b64encode(line.encode('utf-8')).decode('utf-8'), "interactive": True})
+
+                    # Send the command to the LLM and give the response to the user
+                    llm_response = await with_message_history.ainvoke(
+                        {
+                            "messages": [HumanMessage(content=line)],
+                            "username": process.get_extra_info('username'),
+                            "interactive": True
+                        },
+                        config=llm_config
+                    )
+                    if llm_response.content == "XXX-END-OF-SESSION-XXX":
+                        await session_summary(process, llm_config, with_message_history, server)
+                        process.exit(0)
+                        return
+                    else:
+                        process.stdout.write(f"{llm_response.content}")
+                        logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
+
+            except asyncssh.misc.TerminalSizeChanged:
+                logger.warning("SSH client changed terminal size. Ignoring and continuing.")
+                pass  # Ignore this error and keep running
+
+    except asyncssh.BreakReceived:
+        pass
+    finally:
+        await session_summary(process, llm_config, with_message_history, server)
+        process.exit(0)
 
 async def start_server() -> None:
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
