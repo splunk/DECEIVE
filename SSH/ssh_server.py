@@ -111,25 +111,34 @@ class MySSHServer(asyncssh.SSHServer):
     def kbdinit_auth_supported(self) -> bool:
         return False
 
+
     def validate_password(self, username: str, password: str) -> bool:
         """Authenticate user, with a chance-based success for wildcard passwords."""
         pw = accounts.get(username, '*')  # Get stored password or wildcard (*)
-        wildcard_success_rate = config['authentication'].getfloat("wildcard_success_rate", 0.3)  # Default 30%
 
-        if pw == '*':  # Wildcard password logic
-            if random.random() < wildcard_success_rate:  # Success chance
+        # Fetch wildcard success rate safely from config, with a default of 30%
+        try:
+            wildcard_success_rate = float(config.get('authentication', 'wildcard_success_rate', fallback="0.3"))
+        except ValueError:
+            wildcard_success_rate = 0.3  # Default to 30% if there's an issue
+
+        # Wildcard password handling with probability-based success
+        if pw == '*':
+            if random.random() < wildcard_success_rate:  # Chance-based success
                 logger.info("Wildcard authentication success", extra={"username": username, "password": password})
                 return True
             else:
                 logger.info("Wildcard authentication failed (random chance)", extra={"username": username, "password": password})
                 return False
 
-        elif password == pw:  # Normal authentication
+        # Regular password validation
+        if password == pw:
             logger.info("Authentication success", extra={"username": username, "password": password})
             return True
         else:
             logger.info("Authentication failed", extra={"username": username, "password": password})
             return False
+
 
 
 async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory, server: MySSHServer):
