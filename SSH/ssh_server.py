@@ -110,36 +110,33 @@ class MySSHServer(asyncssh.SSHServer):
         return False
     def kbdinit_auth_supported(self) -> bool:
         return False
-
-
+    
     def validate_password(self, username: str, password: str) -> bool:
-        """Authenticate user, with a chance-based success for wildcard passwords."""
-        pw = accounts.get(username, '*')  # Get stored password or wildcard (*)
+            """Authenticate user, with a chance-based success for wildcard passwords."""
+            pw = accounts.get(username, '*')  # Get stored password or wildcard (*)
 
-        # Fetch wildcard success rate safely from config, with a default of 30%
-        try:
-            wildcard_success_rate = float(config.get('authentication', 'wildcard_success_rate', fallback="0.3"))
-        except ValueError:
-            wildcard_success_rate = 0.3  # Default to 30% if there's an issue
+            # Fetch wildcard success rate safely from config, with a default of 30%
+            try:
+                wildcard_success_rate = float(config.get('authentication', 'wildcard_success_rate', fallback="0.3"))
+            except ValueError:
+                wildcard_success_rate = 0.3  # Default to 30% if there's an issue
 
-        # Wildcard password handling with probability-based success
-        if pw == '*':
-            if random.random() < wildcard_success_rate:  # Chance-based success
-                logger.info("Wildcard authentication success", extra={"username": username, "password": password})
+            # Wildcard password handling with probability-based success
+            if pw == '*':
+                if random.random() < wildcard_success_rate:  # Chance-based success
+                    logger.info("Wildcard authentication success", extra={"username": username, "password": password})
+                    return True
+                else:
+                    logger.info("Wildcard authentication failed (random chance)", extra={"username": username, "password": password})
+                    return False
+
+            # Regular password validation
+            if password == pw:
+                logger.info("Authentication success", extra={"username": username, "password": password})
                 return True
             else:
-                logger.info("Wildcard authentication failed (random chance)", extra={"username": username, "password": password})
+                logger.info("Authentication failed", extra={"username": username, "password": password})
                 return False
-
-        # Regular password validation
-        if password == pw:
-            logger.info("Authentication success", extra={"username": username, "password": password})
-            return True
-        else:
-            logger.info("Authentication failed", extra={"username": username, "password": password})
-            return False
-
-
 
 async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory, server: MySSHServer):
     # Check if the summary has already been generated
@@ -201,6 +198,10 @@ representative examples.
     server.summary_generated = True
 
 async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer) -> None:
+    # This is the main loop for handling SSH client connections. 
+    # Any user interaction should be done here.
+
+    # Give each session a unique name
     task_uuid = f"session-{uuid.uuid4()}"
     current_task = asyncio.current_task()
     current_task.set_name(task_uuid)
@@ -209,82 +210,64 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
 
     try:
         if process.command:
+            # Handle non-interactive command execution
             command = process.command
             logger.info("User input", extra={"details": b64encode(command.encode('utf-8')).decode('utf-8'), "interactive": False})
-
             llm_response = await with_message_history.ainvoke(
                 {
                     "messages": [HumanMessage(content=command)],
                     "username": process.get_extra_info('username'),
                     "interactive": False
                 },
-                config=llm_config
+                    config=llm_config
             )
-
-            try:
-                process.stdout.write(f"{llm_response.content}")
-                logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
-            except BrokenPipeError:
-                logger.warning("BrokenPipeError: SSH client disconnected mid-session. Ignoring output.")
-
+            process.stdout.write(f"{llm_response.content}")
+            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
             await session_summary(process, llm_config, with_message_history, server)
             process.exit(0)
-
         else:
+            # Handle interactive session
             llm_response = await with_message_history.ainvoke(
                 {
                     "messages": [HumanMessage(content="ignore this message")],
                     "username": process.get_extra_info('username'),
                     "interactive": True
                 },
-                config=llm_config
+                    config=llm_config
             )
 
-            try:
-                process.stdout.write(f"{llm_response.content}")
-                logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
-            except BrokenPipeError:
-                logger.warning("BrokenPipeError: SSH client disconnected mid-session. Ignoring output.")
+            process.stdout.write(f"{llm_response.content}")
+            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
 
-            try:
-                async for line in process.stdin:
-                    line = line.rstrip('\n')
-                    logger.info("User input", extra={"details": b64encode(line.encode('utf-8')).decode('utf-8'), "interactive": True})
+            async for line in process.stdin:
+                line = line.rstrip('\n')
+                logger.info("User input", extra={"details": b64encode(line.encode('utf-8')).decode('utf-8'), "interactive": True})
 
-                    llm_response = await with_message_history.ainvoke(
-                        {
-                            "messages": [HumanMessage(content=line)],
-                            "username": process.get_extra_info('username'),
-                            "interactive": True
-                        },
+                # Send the command to the LLM and give the response to the user
+                llm_response = await with_message_history.ainvoke(
+                    {
+                        "messages": [HumanMessage(content=line)],
+                        "username": process.get_extra_info('username'),
+                        "interactive": True
+                    },
                         config=llm_config
-                    )
-
-                    if llm_response.content == "XXX-END-OF-SESSION-XXX":
-                        await session_summary(process, llm_config, with_message_history, server)
-                        process.exit(0)
-                        return
-
-                    try:
-                        process.stdout.write(f"{llm_response.content}")
-                        logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
-                    except BrokenPipeError:
-                        logger.warning("BrokenPipeError: SSH client disconnected mid-session. Ignoring output.")
-                        break  # Stop processing if the client has disconnected
-
-            except asyncssh.misc.TerminalSizeChanged:
-                logger.warning("SSH client changed terminal size. Ignoring and continuing.")
-                await asyncio.sleep(0.1)  # Small delay to avoid spamming errors
-                pass  # Continue execution
+                )
+                if llm_response.content == "XXX-END-OF-SESSION-XXX":
+                    await session_summary(process, llm_config, with_message_history, server)
+                    process.exit(0)
+                    return
+                else:
+                    process.stdout.write(f"{llm_response.content}")
+                    logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
 
     except asyncssh.BreakReceived:
         pass
-
     finally:
         await session_summary(process, llm_config, with_message_history, server)
         process.exit(0)
 
-
+    # Just in case we ever get here, which we probably shouldn't
+    # process.exit(0)
 
 async def start_server() -> None:
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
@@ -313,7 +296,7 @@ class ContextFilter(logging.Filter):
         if task:
             task_name = task.get_name()
         else:
-            task_name = "-"
+            task_name = thread_local.__dict__.get('session_id', '-')
 
         record.src_ip = thread_local.__dict__.get('src_ip', '-')
         record.src_port = thread_local.__dict__.get('src_port', '-')   
@@ -340,10 +323,10 @@ def get_user_accounts() -> dict:
 
     return accounts
 
-def choose_llm():
-    llm_provider_name = config['llm'].get("llm_provider", "openai")
+def choose_llm(llm_provider: Optional[str] = None, model_name: Optional[str] = None):
+    llm_provider_name = llm_provider or config['llm'].get("llm_provider", "openai")
     llm_provider_name = llm_provider_name.lower()
-    model_name = config['llm'].get("model_name", "gpt-3.5-turbo")
+    model_name = model_name or config['llm'].get("model_name", "gpt-3.5-turbo")
 
     if llm_provider_name == 'openai':
         llm_model = ChatOpenAI(
@@ -395,25 +378,76 @@ def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
 try:
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Start the SSH honeypot server.')
-    parser.add_argument('-c', '--config', type=str, default='config.ini', help='Path to the configuration file')
+    parser.add_argument('-c', '--config', type=str, default=None, help='Path to the configuration file')
     parser.add_argument('-p', '--prompt', type=str, help='The entire text of the prompt')
     parser.add_argument('-f', '--prompt-file', type=str, default='prompt.txt', help='Path to the prompt file')
+    parser.add_argument('-l', '--llm-provider', type=str, help='The LLM provider to use')
+    parser.add_argument('-m', '--model-name', type=str, help='The model name to use')
+    parser.add_argument('-t', '--trimmer-max-tokens', type=int, help='The maximum number of tokens to send to the LLM backend in a single request')
+    parser.add_argument('-s', '--system-prompt', type=str, help='System prompt for the LLM')
+    parser.add_argument('-P', '--port', type=int, help='The port the SSH honeypot will listen on')
+    parser.add_argument('-k', '--host-priv-key', type=str, help='The host key to use for the SSH server')
+    parser.add_argument('-v', '--server-version-string', type=str, help='The server version string to send to clients')
+    parser.add_argument('-L', '--log-file', type=str, help='The name of the file you wish to write the honeypot log to')
+    parser.add_argument('-S', '--sensor-name', type=str, help='The name of the sensor, used to identify this honeypot in the logs')
+    parser.add_argument('-u', '--user-account', action='append', help='User account in the form username=password. Can be repeated.')
     args = parser.parse_args()
 
-    # Check if the config file exists
-    if not os.path.exists(args.config):
-        print(f"Error: The specified config file '{args.config}' does not exist.", file=sys.stderr)
-        sys.exit(1)
+    # Determine which config file to load
+    config = ConfigParser()
+    if args.config is not None:
+        # User explicitly set a config file; error if it doesn't exist.
+        if not os.path.exists(args.config):
+            print(f"Error: The specified config file '{args.config}' does not exist.", file=sys.stderr)
+            sys.exit(1)
+        config.read(args.config)
+    else:
+        default_config = "config.ini"
+        if os.path.exists(default_config):
+            config.read(default_config)
+        else:
+            # Use defaults when no config file found.
+            config['honeypot'] = {'log_file': 'ssh_log.log', 'sensor_name': socket.gethostname()}
+            config['ssh'] = {'port': '8022', 'host_priv_key': 'ssh_host_key', 'server_version_string': 'SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3'}
+            config['llm'] = {'llm_provider': 'openai', 'model_name': 'gpt-3.5-turbo', 'trimmer_max_tokens': '64000', 'system_prompt': ''}
+            config['user_accounts'] = {}
+
+    # Override config values with command line arguments if provided
+    if args.llm_provider:
+        config['llm']['llm_provider'] = args.llm_provider
+    if args.model_name:
+        config['llm']['model_name'] = args.model_name
+    if args.trimmer_max_tokens:
+        config['llm']['trimmer_max_tokens'] = str(args.trimmer_max_tokens)
+    if args.system_prompt:
+        config['llm']['system_prompt'] = args.system_prompt
+    if args.port:
+        config['ssh']['port'] = str(args.port)
+    if args.host_priv_key:
+        config['ssh']['host_priv_key'] = args.host_priv_key
+    if args.server_version_string:
+        config['ssh']['server_version_string'] = args.server_version_string
+    if args.log_file:
+        config['honeypot']['log_file'] = args.log_file
+    if args.sensor_name:
+        config['honeypot']['sensor_name'] = args.sensor_name
+
+    # Merge command-line user accounts into the config
+    if args.user_account:
+        if 'user_accounts' not in config:
+            config['user_accounts'] = {}
+        for account in args.user_account:
+            if '=' in account:
+                key, value = account.split('=', 1)
+                config['user_accounts'][key.strip()] = value.strip()
+            else:
+                config['user_accounts'][account.strip()] = ''
+
+    # Read the user accounts from the configuration
+    accounts = get_user_accounts()
 
     # Always use UTC for logging
     logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T",timespec="milliseconds"))
-
-    # Read our configuration file
-    config = ConfigParser()
-    config.read(args.config)
-
-    # Read the user accounts from the configuration file
-    accounts = get_user_accounts()
 
     # Get the sensor name from the config or use the system's hostname
     sensor_name = config['honeypot'].get('sensor_name', socket.gethostname())
@@ -436,7 +470,7 @@ try:
     llm_system_prompt = prompts["system_prompt"]
     llm_user_prompt = prompts["user_prompt"]
 
-    llm = choose_llm()
+    llm = choose_llm(config['llm'].get("llm_provider"), config['llm'].get("model_name"))
 
     llm_sessions = dict()
 
