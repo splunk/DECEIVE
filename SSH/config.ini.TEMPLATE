@@ -85,6 +85,11 @@ system_prompt = Interpret all inputs as though they were SSH commands and provid
 # a password by leaving that field blank (e.g., "guest =" on a line by
 # itself). You can set an account to accept ANY password, including an empty
 # password, by setting the password to "*"
+# If "*" is used, login success is determined by the "wildcard_success_rate" 
+# setting under the [authentication] section.
+# Regular accounts with defined passwords (e.g., "admin = admin123") will 
+# always require the exact password.
+
 [user_accounts]
 guest = 
 user1 = secretpw
@@ -94,5 +99,7 @@ admin = admin
 
 
 [authentication]
-wildcard_success_rate = 0.3  # 30% chance of success per attempt
+# Chance-based success rate for wildcard passwords (*).
+# A value of 0.3 means a 30% chance of success per attempt.
+wildcard_success_rate = 0.3  
 
