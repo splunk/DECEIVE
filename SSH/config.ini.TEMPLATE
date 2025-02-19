@@ -29,6 +29,8 @@ server_version_string = OpenSSH_8.2p1 Ubuntu-4ubuntu0.3
 ##### OpenAI
 llm_provider = openai
 model_name = gpt-4o
+# if you want to specify another OpenAI-compatible endpoint
+# llm_endpoint = https://example.com
 
 ##### ollama llama3
 #llm_provider = ollama
