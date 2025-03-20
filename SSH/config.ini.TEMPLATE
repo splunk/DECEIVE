@@ -30,6 +30,13 @@ server_version_string = OpenSSH_8.2p1 Ubuntu-4ubuntu0.3
 llm_provider = openai
 model_name = gpt-4o
 
+##### Azure OpenAI
+#llm_provider = azure 
+#azure_deployment = gpt-4o 
+#azure_api_version = 2025-01-01-preview
+#azure_endpoint = <your endpoint url>
+#model_name = gpt-4o
+
 ##### ollama llama3
 #llm_provider = ollama
 #model_name = llama3.3

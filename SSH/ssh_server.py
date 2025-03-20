@@ -15,7 +15,7 @@ import datetime
 import uuid
 from base64 import b64encode
 from operator import itemgetter
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, AzureChatOpenAI
 from langchain_aws import ChatBedrock, ChatBedrockConverse
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import ChatOllama 
@@ -234,7 +234,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                     },
                         config=llm_config
                 )
-                if llm_response.content == "XXX-END-OF-SESSION-XXX":
+                if llm_response.content == "YYY-END-OF-SESSION-YYY":
                     await session_summary(process, llm_config, with_message_history, server)
                     process.exit(0)
                     return
@@ -314,8 +314,15 @@ def choose_llm(llm_provider: Optional[str] = None, model_name: Optional[str] = N
         llm_model = ChatOpenAI(
             model=model_name
         )
+    elif llm_provider_name == 'azure':
+        llm_model = AzureChatOpenAI(
+            azure_deployment=config['llm'].get("azure_deployment"),
+            azure_endpoint=config['llm'].get("azure_endpoint"),
+            api_version=config['llm'].get("azure_api_version"),
+            model=config['llm'].get("model_name")  # Ensure model_name is passed here
+        )
     elif llm_provider_name == 'ollama':
-            llm_model = ChatOllama(
+        llm_model = ChatOllama(
             model=model_name
         )
     elif llm_provider_name == 'aws':
