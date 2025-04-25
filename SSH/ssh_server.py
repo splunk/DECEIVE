@@ -310,8 +310,8 @@ def choose_llm(llm_provider: Optional[str] = None, model_name: Optional[str] = N
     llm_provider_name = llm_provider_name.lower()
     model_name = model_name or config['llm'].get("model_name", "gpt-3.5-turbo")
     
-    # Get temperature parameter from config, default to 0.7 if not specified
-    temperature = config['llm'].getfloat("temperature", 0.7)
+    # Get temperature parameter from config, default to 0.2 if not specified
+    temperature = config['llm'].getfloat("temperature", 0.2)
 
     if llm_provider_name == 'openai':
         llm_model = ChatOpenAI(
