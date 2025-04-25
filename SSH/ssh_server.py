@@ -308,7 +308,7 @@ def get_user_accounts() -> dict:
 def choose_llm(llm_provider: Optional[str] = None, model_name: Optional[str] = None):
     llm_provider_name = llm_provider or config['llm'].get("llm_provider", "openai")
     llm_provider_name = llm_provider_name.lower()
-    model_name = model_name or config['llm'].get("model_name", "gpt-3.5-turbo")
+    model_name = model_name or config['llm'].get("model_name", "gpt-4o-mini")
     
     # Get temperature parameter from config, default to 0.2 if not specified
     temperature = config['llm'].getfloat("temperature", 0.2)
