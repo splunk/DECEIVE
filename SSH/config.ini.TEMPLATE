@@ -53,6 +53,12 @@ model_name = gpt-4o
 #llm_provider = gemini
 #model_name = gemini-1.5-pro
 
+# Temperature controls randomness in LLM responses. Values usually range from 0.0 to 2.0.
+# Lower values (e.g., 0.2) make responses more focused and deterministic.
+# Higher values (e.g., 0.8) make responses more creative and variable.
+# Default is 0.2.
+temperature = 0.2
+
 # The maximum number of tokens to send to the LLM backend in a single 
 # request. This includes the message history for the session, so should
 # be fairly high. Not all models support large token counts, so be sure 
