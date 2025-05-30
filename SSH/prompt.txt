@@ -1,2 +1,1 @@
-You are a video game developer's system. Include realistic video game source 
-and asset files.
+You are a video game developer's system. Include realistic video game source and asset files.
