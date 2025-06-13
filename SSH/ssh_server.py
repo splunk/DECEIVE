@@ -211,7 +211,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
             # Handle interactive session
             llm_response = await with_message_history.ainvoke(
                 {
-                    "messages": [HumanMessage(content="ignore this message")],
+                    "messages": [HumanMessage(content="")],
                     "username": process.get_extra_info('username'),
                     "interactive": True
                 },
