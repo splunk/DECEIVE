@@ -27,6 +27,13 @@ from langchain_core.runnables import RunnablePassthrough
 from asyncssh.misc import ConnectionLost
 import socket
 
+config = ConfigParser()
+accounts = {}
+llm_sessions = {}
+thread_local = threading.local()
+logger = logging.getLogger(__name__)
+with_message_history = None
+
 class JSONFormatter(logging.Formatter):
     def __init__(self, sensor_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -183,6 +190,9 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
     # This is the main loop for handling SSH client connections. 
     # Any user interaction should be done here.
 
+    if with_message_history is None:
+        raise RuntimeError("LLM message history is not configured.")
+
     # Give each session a unique name
     task_uuid = f"session-{uuid.uuid4()}"
     current_task = asyncio.current_task()
@@ -251,12 +261,9 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
     # Just in case we ever get here, which we probably shouldn't
     # process.exit(0)
 
-async def start_server() -> None:
-    async def process_factory(process: asyncssh.SSHServerProcess) -> None:
-        server = process.get_server()
-        await handle_client(process, server)
-
-    await asyncssh.listen(
+async def start_server():
+    return await asyncssh.listen(
+        host=config['ssh'].get("listen_host", ""),
         port=config['ssh'].getint("port", 8022),
         reuse_address=True,
         reuse_port=True,
@@ -371,10 +378,7 @@ def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
         "user_prompt": user_prompt
     }
 
-#### MAIN ####
-
-try:
-    # Parse command line arguments
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description='Start the SSH honeypot server.')
     parser.add_argument('-c', '--config', type=str, default=None, help='Path to the configuration file')
     parser.add_argument('-p', '--prompt', type=str, help='The entire text of the prompt')
@@ -390,28 +394,30 @@ try:
     parser.add_argument('-L', '--log-file', type=str, help='The name of the file you wish to write the honeypot log to')
     parser.add_argument('-S', '--sensor-name', type=str, help='The name of the sensor, used to identify this honeypot in the logs')
     parser.add_argument('-u', '--user-account', action='append', help='User account in the form username=password. Can be repeated.')
-    args = parser.parse_args()
+    return parser.parse_args(argv)
 
-    # Determine which config file to load
-    config = ConfigParser()
+
+def load_config(args) -> ConfigParser:
+    loaded_config = ConfigParser()
     if args.config is not None:
-        # User explicitly set a config file; error if it doesn't exist.
         if not os.path.exists(args.config):
             print(f"Error: The specified config file '{args.config}' does not exist.", file=sys.stderr)
             sys.exit(1)
-        config.read(args.config)
+        loaded_config.read(args.config)
     else:
         default_config = "config.ini"
         if os.path.exists(default_config):
-            config.read(default_config)
+            loaded_config.read(default_config)
         else:
-            # Use defaults when no config file found.
-            config['honeypot'] = {'log_file': 'ssh_log.log', 'sensor_name': socket.gethostname()}
-            config['ssh'] = {'port': '8022', 'host_priv_key': 'ssh_host_key', 'server_version_string': 'SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3'}
-            config['llm'] = {'llm_provider': 'openai', 'model_name': 'gpt-3.5-turbo', 'trimmer_max_tokens': '64000', 'temperature': '0.7', 'system_prompt': ''}
-            config['user_accounts'] = {}
+            loaded_config['honeypot'] = {'log_file': 'ssh_log.log', 'sensor_name': socket.gethostname()}
+            loaded_config['ssh'] = {'port': '8022', 'host_priv_key': 'ssh_host_key', 'server_version_string': 'SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3'}
+            loaded_config['llm'] = {'llm_provider': 'openai', 'model_name': 'gpt-3.5-turbo', 'trimmer_max_tokens': '64000', 'temperature': '0.7', 'system_prompt': ''}
+            loaded_config['user_accounts'] = {}
 
-    # Override config values with command line arguments if provided
+    return loaded_config
+
+
+def apply_args_to_config(args) -> None:
     if args.llm_provider:
         config['llm']['llm_provider'] = args.llm_provider
     if args.model_name:
@@ -422,7 +428,7 @@ try:
         config['llm']['system_prompt'] = args.system_prompt
     if args.temperature is not None:
         config['llm']['temperature'] = str(args.temperature)
-    if args.port:
+    if args.port is not None:
         config['ssh']['port'] = str(args.port)
     if args.host_priv_key:
         config['ssh']['host_priv_key'] = args.host_priv_key
@@ -433,7 +439,6 @@ try:
     if args.sensor_name:
         config['honeypot']['sensor_name'] = args.sensor_name
 
-    # Merge command-line user accounts into the config
     if args.user_account:
         if 'user_accounts' not in config:
             config['user_accounts'] = {}
@@ -444,36 +449,27 @@ try:
             else:
                 config['user_accounts'][account.strip()] = ''
 
-    # Read the user accounts from the configuration
-    accounts = get_user_accounts()
 
-    # Always use UTC for logging
-    logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T",timespec="milliseconds"))
+def configure_logging() -> None:
+    global logger
 
-    # Get the sensor name from the config or use the system's hostname
+    logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T", timespec="milliseconds"))
+
     sensor_name = config['honeypot'].get('sensor_name', socket.gethostname())
-
-    # Set up the honeypot logger
-    logger = logging.getLogger(__name__)  
-    logger.setLevel(logging.INFO)  
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    logger.filters.clear()
+    logger.propagate = False
 
     log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "ssh_log.log"))
-    logger.addHandler(log_file_handler)
-
     log_file_handler.setFormatter(JSONFormatter(sensor_name))
+    logger.addHandler(log_file_handler)
+    logger.addFilter(ContextFilter())
 
-    f = ContextFilter()
-    logger.addFilter(f)
 
-    # Now get access to the LLM
-
-    prompts = get_prompts(args.prompt, args.prompt_file)
-    llm_system_prompt = prompts["system_prompt"]
-    llm_user_prompt = prompts["user_prompt"]
-
+def build_message_history(llm_system_prompt: str, llm_user_prompt: str):
     llm = choose_llm(config['llm'].get("llm_provider"), config['llm'].get("model_name"))
-
-    llm_sessions = dict()
 
     llm_trimmer = trim_messages(
         max_tokens=config['llm'].getint("trimmer_max_tokens", 64000),
@@ -504,22 +500,47 @@ try:
         | llm
     )
 
-    with_message_history = RunnableWithMessageHistory(
-        llm_chain, 
+    return RunnableWithMessageHistory(
+        llm_chain,
         llm_get_session_history,
         input_messages_key="messages"
     )
-    # Thread-local storage for connection details
+
+
+def configure_runtime(args, message_history=None) -> None:
+    global accounts, config, llm_sessions, thread_local, with_message_history
+
+    config = load_config(args)
+    apply_args_to_config(args)
+
+    accounts = get_user_accounts()
+    llm_sessions = {}
     thread_local = threading.local()
+    configure_logging()
 
-    # Kick off the server!
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_server())
-    loop.run_forever()
+    if message_history is None:
+        prompts = get_prompts(args.prompt, args.prompt_file)
+        with_message_history = build_message_history(prompts["system_prompt"], prompts["user_prompt"])
+    else:
+        with_message_history = message_history
 
-except Exception as e:
-    print(f"Error: {e}", file=sys.stderr)
-    traceback.print_exc()
-    sys.exit(1)
 
+def main(argv=None) -> int:
+    try:
+        args = parse_args(argv)
+        configure_runtime(args)
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(start_server())
+        loop.run_forever()
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        traceback.print_exc()
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

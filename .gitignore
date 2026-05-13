@@ -168,3 +168,6 @@ cython_debug/
 
 # config files
 *.ini 
+
+# Local deployment artifacts and provider-specific secrets
+SSH/DEPLOY/
