@@ -4,6 +4,7 @@
 
 [honeypot]
 # The name of the file you wish to write the honeypot log to.
+# Relative paths are resolved from this config file's directory.
 log_file = ssh_log.log 
 
 # The name of the sensor, used to identify this honeypot in the logs.
@@ -88,7 +89,7 @@ system_prompt = Interpret all inputs as though they were SSH commands and provid
     standard. Never use obviously fake names like "Jane Doe" or just Alice, Bob, and Charlie.
 
     If at any time the user's input would cause the SSH session to close (e.g., if 
-    they exited the login shell), your only answer should be "XXX-END-OF-SESSION-XXX" 
+    they exited the login shell), your only answer should be "YYY-END-OF-SESSION-YYY"
     with no additional output before or after. Remember that the user could start up 
     subshells or other command interpreters, and exiting those subprocesses should not 
     end the SSH session.
@@ -105,5 +106,3 @@ guest =
 user1 = secretpw
 user2 = password123
 root = *
-
-

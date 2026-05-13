@@ -1,4 +1,8 @@
 * Branch out to other protocols, such as SMTP or HTTP (REST API?)
+* P1: Add bounded resource controls for public SSH input: maximum line length, session timeout, connection/request limits, LLM call throttling, and cleanup for per-session message history.
+* P2: Add an explicit authentication policy setting for unknown usernames, so operators can choose the current open honeypot behavior or restrict login to configured [user_accounts] only.
+* P3: Clean up the SSH server lifecycle code. Remove the unused local process_factory, stop constructing a separate MySSHServer in the asyncssh process_factory, and make session summary ownership explicit.
+* P3: Refactor ssh_server.py so import has no side effects and core setup lives behind main()/smaller helpers. This should make config loading, auth behavior, logging, and LLM/session handling easier to test.
 * Sometimes the LLM hallucinates the user's future inputs, and acts as though the user typed them. The prompt section below tries to fix this, but doesn't seem to work well.  
         Never include your guess at the next user command(s) in your output. Be sure to only emulate one input at a time, and to never anticipate what the user's next input will be. For each user input, only send the expected output and nothing else. For example, in the following Python interpreter snippet, the user typed 'exti', but the LLM incrorrectly responded with 'exit' and then simulated exiting the Python shell.  Do not do things like this.
         guest@devserver:~$ python
