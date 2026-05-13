@@ -154,9 +154,13 @@ async def test_non_interactive_command_runs_through_real_ssh_server(connect, log
     user_input = next(record for record in records if record["message"] == "User input")
     assert user_input["interactive"] is False
     assert b64decode(user_input["details"]).decode("utf-8") == "pwd"
+    assert user_input["sensor_name"] == "integration-test"
+    assert user_input["sensor_protocol"] == "ssh"
+    assert user_input["task_name"].startswith("session-")
 
     summary = next(record for record in records if record["message"] == "Session summary")
     assert summary["judgement"] == "BENIGN"
+    assert len([record for record in records if record["message"] == "Session summary"]) == 1
 
 
 @pytest.mark.asyncio
@@ -182,7 +186,11 @@ async def test_interactive_session_runs_commands_and_exits(connect, log_records)
 
 
 @pytest.mark.asyncio
-async def test_password_and_wildcard_accounts_can_authenticate(connect):
+async def test_passwordless_fixed_wildcard_and_unknown_accounts_can_authenticate(connect):
+    async with await connect(username="guest") as conn:
+        result = await conn.run("pwd", check=True)
+    assert result.stdout == "/home/guest\n"
+
     async with await connect(username="user1", password="secretpw") as conn:
         result = await conn.run("pwd", check=True)
     assert result.stdout == "/home/user1\n"
@@ -190,6 +198,10 @@ async def test_password_and_wildcard_accounts_can_authenticate(connect):
     async with await connect(username="root", password="anything") as conn:
         result = await conn.run("pwd", check=True)
     assert result.stdout == "/home/root\n"
+
+    async with await connect(username="intruder", password="anything") as conn:
+        result = await conn.run("pwd", check=True)
+    assert result.stdout == "/home/intruder\n"
 
 
 @pytest.mark.asyncio
@@ -200,7 +212,87 @@ async def test_wrong_password_is_rejected(connect):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="Known P0 bug: thread-local metadata is shared by asyncio sessions")
+async def test_config_file_relative_host_key_can_start_real_ssh_server(tmp_path):
+    host_key = tmp_path / "ssh_host_key"
+    log_file = tmp_path / "ssh_log.log"
+    config_file = tmp_path / "config.ini"
+
+    key = asyncssh.generate_private_key("ssh-rsa")
+    key.write_private_key(str(host_key))
+    config_file.write_text(
+        f"""
+[honeypot]
+log_file = {log_file}
+sensor_name = config-relative-test
+
+[ssh]
+listen_host = 127.0.0.1
+port = 0
+host_priv_key = ssh_host_key
+server_version_string = OpenSSH_8.2p1 Ubuntu-4ubuntu0.3
+
+[llm]
+llm_provider = fake
+model_name = fake
+trimmer_max_tokens = 64000
+temperature = 0.0
+system_prompt =
+
+[user_accounts]
+guest =
+""".lstrip()
+    )
+
+    args = ssh_server.parse_args(["--config", str(config_file), "--prompt", "Simulate Linux."])
+    ssh_server.configure_runtime(args, message_history=ScriptedMessageHistory())
+    server = await ssh_server.start_server()
+    try:
+        assert server.get_port() > 0
+        assert log_file.exists()
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+def test_config_file_relative_log_file_is_written_next_to_config(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    cwd = tmp_path / "cwd"
+    config_dir.mkdir()
+    cwd.mkdir()
+    config_file = config_dir / "config.ini"
+    expected_log_file = config_dir / "ssh_log.log"
+    config_file.write_text(
+        """
+[honeypot]
+log_file = ssh_log.log
+sensor_name = config-relative-test
+
+[ssh]
+port = 0
+host_priv_key = ssh_host_key
+server_version_string = OpenSSH_8.2p1 Ubuntu-4ubuntu0.3
+
+[llm]
+llm_provider = fake
+model_name = fake
+trimmer_max_tokens = 64000
+temperature = 0.0
+system_prompt =
+
+[user_accounts]
+guest =
+""".lstrip()
+    )
+    monkeypatch.chdir(cwd)
+
+    args = ssh_server.parse_args(["--config", str(config_file), "--prompt", "Simulate Linux."])
+    ssh_server.configure_runtime(args, message_history=ScriptedMessageHistory())
+
+    assert expected_log_file.exists()
+    assert not (cwd / "ssh_log.log").exists()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_connections_keep_log_source_ports_separate(connect, log_records):
     first = await connect()
     second = await connect()

@@ -275,6 +275,12 @@ def resolve_runtime_path(path: str) -> str:
     return path
 
 
+def resolve_config_output_path(path: str) -> str:
+    if os.path.isabs(path):
+        return path
+    return os.path.join(config_base_dir, path)
+
+
 async def start_server():
     return await asyncssh.listen(
         host=config['ssh'].get("listen_host", ""),
@@ -482,7 +488,8 @@ def configure_logging() -> None:
     logger.filters.clear()
     logger.propagate = False
 
-    log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "ssh_log.log"))
+    log_file = resolve_config_output_path(config['honeypot'].get("log_file", "ssh_log.log"))
+    log_file_handler = logging.FileHandler(log_file)
     log_file_handler.setFormatter(JSONFormatter(sensor_name))
     logger.addHandler(log_file_handler)
     logger.addFilter(ContextFilter())

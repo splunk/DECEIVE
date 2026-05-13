@@ -81,10 +81,10 @@ To run only the SSH integration tests:
 
     uv run pytest tests/test_ssh_integration.py
 
-The integration tests start the real SSH server on a local random port, connect with an SSH client, and use a deterministic fake LLM backend so assertions do not depend on live model output. One concurrent log-attribution test is marked as an expected failure until that known bug is fixed.
+The integration tests start the real SSH server on a local random port, connect with an SSH client, and use a deterministic fake LLM backend so assertions do not depend on live model output. The full suite currently fails on the known P0 concurrent log-attribution bug.
 
 ### Logging
-Logs will be written to the file specified in the `log_file` configuration option. By default, this is `SSH/ssh_log.log`. 
+Logs will be written to the file specified in the `log_file` configuration option. Relative `log_file` paths are resolved from the directory containing the loaded configuration file, so the default template value writes to `SSH/ssh_log.log`.
 
 DECEIVE logs are in JSON lines format, with each line being a complete JSON document. 
 

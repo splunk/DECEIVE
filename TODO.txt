@@ -1,6 +1,7 @@
 * Branch out to other protocols, such as SMTP or HTTP (REST API?)
 * P0: Replace thread-local connection metadata with per-session state or contextvars so concurrent SSH sessions cannot be logged with the wrong source/destination IP and port.
 * P1: Add bounded resource controls for public SSH input: maximum line length, session timeout, connection/request limits, LLM call throttling, and cleanup for per-session message history.
+* P2: Add an explicit authentication policy setting for unknown usernames, so operators can choose the current open honeypot behavior or restrict login to configured [user_accounts] only.
 * P3: Clean up the SSH server lifecycle code. Remove the unused local process_factory, stop constructing a separate MySSHServer in the asyncssh process_factory, and make session summary ownership explicit.
 * P3: Refactor ssh_server.py so import has no side effects and core setup lives behind main()/smaller helpers. This should make config loading, auth behavior, logging, and LLM/session handling easier to test.
 * Sometimes the LLM hallucinates the user's future inputs, and acts as though the user typed them. The prompt section below tries to fix this, but doesn't seem to work well.  
