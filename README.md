@@ -64,6 +64,13 @@ Once the server is running (this can take a few seconds), access it on the confi
 
     ssh guest@localhost -p 8022
 
+## Running Automated Tests
+After installing the Python dependencies, run the integration tests from the repository root:
+
+    python3 -m unittest discover -s tests
+
+The integration tests start the real SSH server on a local random port, connect with an SSH client, and use a deterministic fake LLM backend so assertions do not depend on live model output.
+
 ### Logging
 Logs will be written to the file specified in the `log_file` configuration option. By default, this is `SSH/ssh_log.log`. 
 
