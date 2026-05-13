@@ -1,0 +1,31 @@
+[project]
+name = "deceive"
+version = "0.1.0"
+description = "AI-driven high-interaction SSH honeypot"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "asyncssh",
+    "langchain",
+    "langchain-community",
+    "langchain-openai",
+    "langchain-google-genai",
+    "langchain-ollama",
+    "langchain-aws",
+    "transformers",
+    "torch",
+    "anthropic",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv]
+package = false

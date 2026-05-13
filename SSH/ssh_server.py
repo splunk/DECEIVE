@@ -4,7 +4,6 @@ from configparser import ConfigParser
 import argparse
 import asyncio
 import asyncssh
-import threading
 import sys
 import json
 import os
@@ -27,12 +26,59 @@ from langchain_core.runnables import RunnablePassthrough
 from asyncssh.misc import ConnectionLost
 import socket
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 config = ConfigParser()
+config_base_dir = SCRIPT_DIR
 accounts = {}
 llm_sessions = {}
-thread_local = threading.local()
 logger = logging.getLogger(__name__)
 with_message_history = None
+
+
+def _endpoint_parts(endpoint):
+    if endpoint is not None:
+        return endpoint[:2]
+    return '-', '-'
+
+
+def get_connection_log_extra(source) -> dict:
+    if source is None:
+        peername = None
+        sockname = None
+    else:
+        peername = source.get_extra_info('peername')
+        sockname = source.get_extra_info('sockname')
+
+    src_ip, src_port = _endpoint_parts(peername)
+    dst_ip, dst_port = _endpoint_parts(sockname)
+    return {
+        "src_ip": src_ip,
+        "src_port": src_port,
+        "dst_ip": dst_ip,
+        "dst_port": dst_port,
+    }
+
+
+def new_session_id() -> str:
+    return f"session-{uuid.uuid4()}"
+
+
+def get_session_id(source, fallback=None):
+    if source is None:
+        return fallback
+    return source.get_extra_info('deceive_session_id', fallback)
+
+
+def get_session_log_extra(source, session_id: Optional[str] = None) -> dict:
+    resolved_session_id = session_id or get_session_id(source, '-')
+    return merge_log_extra(get_connection_log_extra(source), task_name=resolved_session_id)
+
+
+def merge_log_extra(log_extra: dict, **extra) -> dict:
+    merged = dict(log_extra)
+    merged.update(extra)
+    return merged
+
 
 class JSONFormatter(logging.Formatter):
     def __init__(self, sensor_name, *args, **kwargs):
@@ -43,11 +89,11 @@ class JSONFormatter(logging.Formatter):
         log_record = {
             "timestamp": datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T", timespec="milliseconds"),
             "level": record.levelname,
-            "task_name": record.task_name,
-            "src_ip": record.src_ip,
-            "src_port": record.src_port,
-            "dst_ip": record.dst_ip,
-            "dst_port": record.dst_port,
+            "task_name": getattr(record, "task_name", "-"),
+            "src_ip": getattr(record, "src_ip", "-"),
+            "src_port": getattr(record, "src_port", "-"),
+            "dst_ip": getattr(record, "dst_ip", "-"),
+            "dst_port": getattr(record, "dst_port", "-"),
             "message": record.getMessage(),
             "sensor_name": self.sensor_name,
             "sensor_protocol": "ssh"
@@ -64,48 +110,31 @@ class MySSHServer(asyncssh.SSHServer):
     def __init__(self):
         super().__init__()
         self.summary_generated = False
+        self.session_id = new_session_id()
+        self.log_extra = get_session_log_extra(None, self.session_id)
 
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
-        # Get the source and destination IPs and ports
-        peername = conn.get_extra_info('peername')
-        sockname = conn.get_extra_info('sockname')
-
-        if peername is not None:
-            src_ip, src_port = peername[:2]
-        else:
-            src_ip, src_port = '-', '-'
-
-        if sockname is not None:
-            dst_ip, dst_port = sockname[:2]
-        else:
-            dst_ip, dst_port = '-', '-'
-
-        # Store the connection details in thread-local storage
-        thread_local.src_ip = src_ip
-        thread_local.src_port = src_port
-        thread_local.dst_ip = dst_ip
-        thread_local.dst_port = dst_port
-
-        # Log the connection details
-        logger.info("SSH connection received", extra={"src_ip": src_ip, "src_port": src_port, "dst_ip": dst_ip, "dst_port": dst_port})
+        conn.set_extra_info(deceive_session_id=self.session_id)
+        self.log_extra = get_session_log_extra(conn, self.session_id)
+        logger.info("SSH connection received", extra=self.log_extra)
 
     def connection_lost(self, exc: Optional[Exception]) -> None:
         if exc:
-            logger.error('SSH connection error', extra={"error": str(exc)})
+            logger.error('SSH connection error', extra=merge_log_extra(self.log_extra, error=str(exc)))
             if not isinstance(exc, ConnectionLost):
                 traceback.print_exception(exc)
         else:
-            logger.info("SSH connection closed")
+            logger.info("SSH connection closed", extra=self.log_extra)
         # Ensure session summary is called on connection loss if attributes are set
         if hasattr(self, '_process') and hasattr(self, '_llm_config') and hasattr(self, '_session'):
-            asyncio.create_task(session_summary(self._process, self._llm_config, self._session, self))
+            asyncio.create_task(session_summary(self._process, self._llm_config, self._session, self, self.log_extra))
 
     def begin_auth(self, username: str) -> bool:
         if accounts.get(username) != '':
-            logger.info("User attempting to authenticate", extra={"username": username})
+            logger.info("User attempting to authenticate", extra=merge_log_extra(self.log_extra, username=username))
             return True
         else:
-            logger.info("Authentication success", extra={"username": username, "password": ""})
+            logger.info("Authentication success", extra=merge_log_extra(self.log_extra, username=username, password=""))
             return False
 
     def password_auth_supported(self) -> bool:
@@ -121,13 +150,13 @@ class MySSHServer(asyncssh.SSHServer):
         pw = accounts.get(username, '*')
         
         if pw == '*' or (pw != '*' and password == pw):
-            logger.info("Authentication success", extra={"username": username, "password": password})
+            logger.info("Authentication success", extra=merge_log_extra(self.log_extra, username=username, password=password))
             return True
         else:
-            logger.info("Authentication failed", extra={"username": username, "password": password})
+            logger.info("Authentication failed", extra=merge_log_extra(self.log_extra, username=username, password=password))
             return False
 
-async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory, server: MySSHServer):
+async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory, server: MySSHServer, log_extra: Optional[dict] = None):
     # Check if the summary has already been generated
     if server.summary_generated:
         return
@@ -182,7 +211,10 @@ representative examples.
     elif "Judgement: MALICIOUS" in llm_response.content:
         judgement = "MALICIOUS"
 
-    logger.info("Session summary", extra={"details": llm_response.content, "judgement": judgement})
+    logger.info(
+        "Session summary",
+        extra=merge_log_extra(log_extra or get_session_log_extra(process), details=llm_response.content, judgement=judgement)
+    )
 
     server.summary_generated = True
 
@@ -193,18 +225,21 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
     if with_message_history is None:
         raise RuntimeError("LLM message history is not configured.")
 
-    # Give each session a unique name
-    task_uuid = f"session-{uuid.uuid4()}"
+    task_uuid = get_session_id(process) or new_session_id()
     current_task = asyncio.current_task()
     current_task.set_name(task_uuid)
 
     llm_config = {"configurable": {"session_id": task_uuid}}
+    log_extra = get_session_log_extra(process, task_uuid)
 
     try:
         if process.command:
             # Handle non-interactive command execution
             command = process.command
-            logger.info("User input", extra={"details": b64encode(command.encode('utf-8')).decode('utf-8'), "interactive": False})
+            logger.info(
+                "User input",
+                extra=merge_log_extra(log_extra, details=b64encode(command.encode('utf-8')).decode('utf-8'), interactive=False)
+            )
             llm_response = await with_message_history.ainvoke(
                 {
                     "messages": [HumanMessage(content=command)],
@@ -214,8 +249,11 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                     config=llm_config
             )
             process.stdout.write(f"{llm_response.content}")
-            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
-            await session_summary(process, llm_config, with_message_history, server)
+            logger.info(
+                "LLM response",
+                extra=merge_log_extra(log_extra, details=b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), interactive=False)
+            )
+            await session_summary(process, llm_config, with_message_history, server, log_extra)
             process.exit(0)
         else:
             # Handle interactive session
@@ -229,11 +267,17 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
             )
 
             process.stdout.write(f"{llm_response.content}")
-            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
+            logger.info(
+                "LLM response",
+                extra=merge_log_extra(log_extra, details=b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), interactive=True)
+            )
 
             async for line in process.stdin:
                 line = line.rstrip('\n')
-                logger.info("User input", extra={"details": b64encode(line.encode('utf-8')).decode('utf-8'), "interactive": True})
+                logger.info(
+                    "User input",
+                    extra=merge_log_extra(log_extra, details=b64encode(line.encode('utf-8')).decode('utf-8'), interactive=True)
+                )
 
                 # Send the command to the LLM and give the response to the user
                 llm_response = await with_message_history.ainvoke(
@@ -245,21 +289,42 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                         config=llm_config
                 )
                 if llm_response.content == "YYY-END-OF-SESSION-YYY":
-                    await session_summary(process, llm_config, with_message_history, server)
+                    await session_summary(process, llm_config, with_message_history, server, log_extra)
                     process.exit(0)
                     return
                 else:
                     process.stdout.write(f"{llm_response.content}")
-                    logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
+                    logger.info(
+                        "LLM response",
+                        extra=merge_log_extra(log_extra, details=b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), interactive=True)
+                    )
 
     except asyncssh.BreakReceived:
         pass
     finally:
-        await session_summary(process, llm_config, with_message_history, server)
+        await session_summary(process, llm_config, with_message_history, server, log_extra)
         process.exit(0)
 
     # Just in case we ever get here, which we probably shouldn't
     # process.exit(0)
+
+def resolve_runtime_path(path: str) -> str:
+    if os.path.isabs(path) or os.path.exists(path):
+        return path
+
+    for base_dir in (config_base_dir, SCRIPT_DIR):
+        candidate = os.path.join(base_dir, path)
+        if os.path.exists(candidate):
+            return candidate
+
+    return path
+
+
+def resolve_config_output_path(path: str) -> str:
+    if os.path.isabs(path):
+        return path
+    return os.path.join(config_base_dir, path)
+
 
 async def start_server():
     return await asyncssh.listen(
@@ -268,7 +333,7 @@ async def start_server():
         reuse_address=True,
         reuse_port=True,
         server_factory=MySSHServer,
-        server_host_keys=config['ssh'].get("host_priv_key", "ssh_host_key"),
+        server_host_keys=resolve_runtime_path(config['ssh'].get("host_priv_key", "ssh_host_key")),
         process_factory=lambda process: handle_client(process, MySSHServer()),
         server_version=config['ssh'].get("server_version_string", "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3")
     )
@@ -281,16 +346,18 @@ class ContextFilter(logging.Filter):
 
     def filter(self, record):
 
-        task = asyncio.current_task()
+        try:
+            task = asyncio.current_task()
+        except RuntimeError:
+            task = None
+
+        if hasattr(record, 'task_name'):
+            return True
+
         if task:
             task_name = task.get_name()
         else:
-            task_name = thread_local.__dict__.get('session_id', '-')
-
-        record.src_ip = thread_local.__dict__.get('src_ip', '-')
-        record.src_port = thread_local.__dict__.get('src_port', '-')   
-        record.dst_ip = thread_local.__dict__.get('dst_ip', '-')
-        record.dst_port = thread_local.__dict__.get('dst_port', '-')
+            task_name = '-'
 
         record.task_name = task_name
         
@@ -363,6 +430,7 @@ def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
             sys.exit(1)
         user_prompt = prompt
     elif prompt_file:
+        prompt_file = resolve_runtime_path(prompt_file)
         if not os.path.exists(prompt_file):
             print(f"Error: The specified prompt file '{prompt_file}' does not exist.", file=sys.stderr)
             sys.exit(1)
@@ -398,21 +466,26 @@ def parse_args(argv=None):
 
 
 def load_config(args) -> ConfigParser:
+    global config_base_dir
+
     loaded_config = ConfigParser()
     if args.config is not None:
         if not os.path.exists(args.config):
             print(f"Error: The specified config file '{args.config}' does not exist.", file=sys.stderr)
             sys.exit(1)
         loaded_config.read(args.config)
+        config_base_dir = os.path.dirname(os.path.abspath(args.config))
     else:
-        default_config = "config.ini"
+        default_config = resolve_runtime_path("config.ini")
         if os.path.exists(default_config):
             loaded_config.read(default_config)
+            config_base_dir = os.path.dirname(os.path.abspath(default_config))
         else:
             loaded_config['honeypot'] = {'log_file': 'ssh_log.log', 'sensor_name': socket.gethostname()}
             loaded_config['ssh'] = {'port': '8022', 'host_priv_key': 'ssh_host_key', 'server_version_string': 'SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3'}
             loaded_config['llm'] = {'llm_provider': 'openai', 'model_name': 'gpt-3.5-turbo', 'trimmer_max_tokens': '64000', 'temperature': '0.7', 'system_prompt': ''}
             loaded_config['user_accounts'] = {}
+            config_base_dir = SCRIPT_DIR
 
     return loaded_config
 
@@ -462,7 +535,8 @@ def configure_logging() -> None:
     logger.filters.clear()
     logger.propagate = False
 
-    log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "ssh_log.log"))
+    log_file = resolve_config_output_path(config['honeypot'].get("log_file", "ssh_log.log"))
+    log_file_handler = logging.FileHandler(log_file)
     log_file_handler.setFormatter(JSONFormatter(sensor_name))
     logger.addHandler(log_file_handler)
     logger.addFilter(ContextFilter())
@@ -508,14 +582,14 @@ def build_message_history(llm_system_prompt: str, llm_user_prompt: str):
 
 
 def configure_runtime(args, message_history=None) -> None:
-    global accounts, config, llm_sessions, thread_local, with_message_history
+    global accounts, config, config_base_dir, llm_sessions, with_message_history
 
+    config_base_dir = SCRIPT_DIR
     config = load_config(args)
     apply_args_to_config(args)
 
     accounts = get_user_accounts()
     llm_sessions = {}
-    thread_local = threading.local()
     configure_logging()
 
     if message_history is None:

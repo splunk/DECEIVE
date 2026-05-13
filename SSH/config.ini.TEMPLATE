@@ -4,6 +4,7 @@
 
 [honeypot]
 # The name of the file you wish to write the honeypot log to.
+# Relative paths are resolved from this config file's directory.
 log_file = ssh_log.log 
 
 # The name of the sensor, used to identify this honeypot in the logs.
