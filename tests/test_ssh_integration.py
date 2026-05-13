@@ -4,7 +4,6 @@ from configparser import ConfigParser
 import json
 from pathlib import Path
 import sys
-import threading
 
 import asyncssh
 import pytest
@@ -19,6 +18,14 @@ import ssh_server  # noqa: E402
 
 
 PROMPT = "guest@deceive-test:~$ "
+SESSION_LOG_MESSAGES = {
+    "SSH connection received",
+    "Authentication success",
+    "User input",
+    "LLM response",
+    "Session summary",
+    "SSH connection closed",
+}
 
 
 class FakeLLMResponse:
@@ -87,7 +94,6 @@ def configured_runtime(tmp_path):
     }
     ssh_server.accounts = ssh_server.get_user_accounts()
     ssh_server.llm_sessions = {}
-    ssh_server.thread_local = threading.local()
     ssh_server.with_message_history = ScriptedMessageHistory()
     ssh_server.configure_logging()
 
@@ -138,13 +144,34 @@ def log_records(configured_runtime):
     return _read_log_records
 
 
+async def wait_for_log_messages(log_records, expected_messages, timeout=2):
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    records = []
+    while loop.time() < deadline:
+        records = log_records()
+        if expected_messages <= {record["message"] for record in records}:
+            return records
+        await asyncio.sleep(0.05)
+    assert expected_messages <= {record["message"] for record in records}
+    return records
+
+
+def assert_single_session_id(records):
+    session_ids = {record["task_name"] for record in records}
+    assert len(session_ids) == 1
+    session_id = session_ids.pop()
+    assert session_id.startswith("session-")
+    return session_id
+
+
 @pytest.mark.asyncio
 async def test_non_interactive_command_runs_through_real_ssh_server(connect, log_records):
     async with await connect() as conn:
         result = await conn.run("pwd", check=True)
 
     assert result.stdout == "/home/guest\n"
-    records = log_records()
+    records = await wait_for_log_messages(log_records, SESSION_LOG_MESSAGES)
     messages = [record["message"] for record in records]
     assert "SSH connection received" in messages
     assert "User input" in messages
@@ -161,6 +188,11 @@ async def test_non_interactive_command_runs_through_real_ssh_server(connect, log
     summary = next(record for record in records if record["message"] == "Session summary")
     assert summary["judgement"] == "BENIGN"
     assert len([record for record in records if record["message"] == "Session summary"]) == 1
+    session_records = [
+        record for record in records
+        if record["message"] in SESSION_LOG_MESSAGES
+    ]
+    assert_single_session_id(session_records)
 
 
 @pytest.mark.asyncio
@@ -177,12 +209,17 @@ async def test_interactive_session_runs_commands_and_exits(connect, log_records)
         process.stdin.write("exit\n")
         await asyncio.wait_for(process.wait(), timeout=2)
 
-    records = log_records()
+    records = await wait_for_log_messages(log_records, SESSION_LOG_MESSAGES)
     interactive_inputs = [
         record for record in records
         if record["message"] == "User input" and record["interactive"]
     ]
     assert [b64decode(record["details"]).decode("utf-8") for record in interactive_inputs] == ["pwd", "exit"]
+    session_records = [
+        record for record in records
+        if record["message"] in SESSION_LOG_MESSAGES
+    ]
+    assert_single_session_id(session_records)
 
 
 @pytest.mark.asyncio
@@ -205,10 +242,19 @@ async def test_passwordless_fixed_wildcard_and_unknown_accounts_can_authenticate
 
 
 @pytest.mark.asyncio
-async def test_wrong_password_is_rejected(connect):
+async def test_wrong_password_is_rejected(connect, log_records):
     with pytest.raises(asyncssh.PermissionDenied):
         async with await connect(username="user1", password="wrong"):
             pass
+    records = await wait_for_log_messages(
+        log_records,
+        {"SSH connection received", "User attempting to authenticate", "Authentication failed"},
+    )
+    auth_records = [
+        record for record in records
+        if record["message"] in {"SSH connection received", "User attempting to authenticate", "Authentication failed"}
+    ]
+    assert_single_session_id(auth_records)
 
 
 @pytest.mark.asyncio
@@ -298,6 +344,7 @@ async def test_concurrent_connections_keep_log_source_ports_separate(connect, lo
     second = await connect()
     try:
         first_port = first.get_extra_info("sockname")[1]
+        second_port = second.get_extra_info("sockname")[1]
         await first.run("first", check=True)
     finally:
         first.close()
@@ -305,10 +352,24 @@ async def test_concurrent_connections_keep_log_source_ports_separate(connect, lo
         await first.wait_closed()
         await second.wait_closed()
 
-    records = log_records()
+    records = await wait_for_log_messages(log_records, {"User input", "LLM response", "Session summary"})
     first_input = next(
         record for record in records
         if record["message"] == "User input"
         and b64decode(record["details"]).decode("utf-8") == "first"
     )
+    first_session = first_input["task_name"]
+    first_session_records = [
+        record for record in records
+        if record["task_name"] == first_session
+        and record["message"] in {"User input", "LLM response", "Session summary"}
+    ]
+
     assert first_input["src_port"] == first_port
+    assert {record["message"] for record in first_session_records} == {"User input", "LLM response", "Session summary"}
+    assert all(record["src_port"] == first_port for record in first_session_records)
+    first_port_records = [record for record in records if record["src_port"] == first_port]
+    second_port_records = [record for record in records if record["src_port"] == second_port]
+    first_session_id = assert_single_session_id(first_port_records)
+    second_session_id = assert_single_session_id(second_port_records)
+    assert first_session_id != second_session_id

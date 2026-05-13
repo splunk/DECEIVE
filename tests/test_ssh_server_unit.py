@@ -234,21 +234,107 @@ def test_json_formatter_emits_documented_log_shape(ssh_module):
     assert data["details"] == "cHdk"
 
 
+class FakeExtraInfoSource:
+    def __init__(self, peername=None, sockname=None, deceive_session_id=None):
+        self._extra_info = {
+            "peername": peername,
+            "sockname": sockname,
+            "deceive_session_id": deceive_session_id,
+        }
+
+    def get_extra_info(self, name, default=None):
+        return self._extra_info.get(name, default)
+
+
+def test_new_session_id_uses_session_prefix(ssh_module):
+    first = ssh_module.new_session_id()
+    second = ssh_module.new_session_id()
+
+    assert first.startswith("session-")
+    assert second.startswith("session-")
+    assert first != second
+
+
+def test_get_session_id_reads_deceive_session_extra(ssh_module):
+    source = FakeExtraInfoSource(deceive_session_id="session-test")
+
+    assert ssh_module.get_session_id(source) == "session-test"
+    assert ssh_module.get_session_id(None, fallback="session-fallback") == "session-fallback"
+
+
+def test_get_connection_log_extra_maps_peer_and_socket_names(ssh_module):
+    source = FakeExtraInfoSource(
+        peername=("192.0.2.10", 4444),
+        sockname=("198.51.100.20", 22),
+    )
+
+    assert ssh_module.get_connection_log_extra(source) == {
+        "src_ip": "192.0.2.10",
+        "src_port": 4444,
+        "dst_ip": "198.51.100.20",
+        "dst_port": 22,
+    }
+
+
+def test_get_connection_log_extra_defaults_missing_peername(ssh_module):
+    source = FakeExtraInfoSource(sockname=("198.51.100.20", 22))
+
+    assert ssh_module.get_connection_log_extra(source) == {
+        "src_ip": "-",
+        "src_port": "-",
+        "dst_ip": "198.51.100.20",
+        "dst_port": 22,
+    }
+
+
+def test_get_connection_log_extra_defaults_missing_sockname(ssh_module):
+    source = FakeExtraInfoSource(peername=("192.0.2.10", 4444))
+
+    assert ssh_module.get_connection_log_extra(source) == {
+        "src_ip": "192.0.2.10",
+        "src_port": 4444,
+        "dst_ip": "-",
+        "dst_port": "-",
+    }
+
+
+def test_get_session_log_extra_combines_connection_metadata_and_task_name(ssh_module):
+    source = FakeExtraInfoSource(
+        peername=("192.0.2.10", 4444),
+        sockname=("198.51.100.20", 22),
+        deceive_session_id="session-test",
+    )
+
+    assert ssh_module.get_session_log_extra(source) == {
+        "src_ip": "192.0.2.10",
+        "src_port": 4444,
+        "dst_ip": "198.51.100.20",
+        "dst_port": 22,
+        "task_name": "session-test",
+    }
+
+
 @pytest.mark.asyncio
-async def test_context_filter_adds_async_task_and_connection_metadata(ssh_module):
-    ssh_module.thread_local.src_ip = "192.0.2.10"
-    ssh_module.thread_local.src_port = 4444
-    ssh_module.thread_local.dst_ip = "198.51.100.20"
-    ssh_module.thread_local.dst_port = 22
+async def test_context_filter_adds_async_task_name_only(ssh_module):
     asyncio.current_task().set_name("session-test")
     record = logging.LogRecord("ssh_server", logging.INFO, "ssh_server.py", 1, "msg", (), None)
 
     assert ssh_module.ContextFilter().filter(record) is True
     assert record.task_name == "session-test"
-    assert record.src_ip == "192.0.2.10"
-    assert record.src_port == 4444
-    assert record.dst_ip == "198.51.100.20"
-    assert record.dst_port == 22
+    assert not hasattr(record, "src_ip")
+    assert not hasattr(record, "src_port")
+    assert not hasattr(record, "dst_ip")
+    assert not hasattr(record, "dst_port")
+
+
+@pytest.mark.asyncio
+async def test_context_filter_preserves_explicit_task_name(ssh_module):
+    asyncio.current_task().set_name("asyncio-task")
+    record = logging.LogRecord("ssh_server", logging.INFO, "ssh_server.py", 1, "msg", (), None)
+    record.task_name = "session-explicit"
+
+    assert ssh_module.ContextFilter().filter(record) is True
+    assert record.task_name == "session-explicit"
 
 
 def test_llm_session_history_is_created_once_per_session_id(ssh_module):
@@ -356,9 +442,16 @@ async def test_session_summary_logs_judgement_once(tmp_path, ssh_module):
     session = FakeSession()
     server = ssh_module.MySSHServer()
     llm_config = {"configurable": {"session_id": "session-a"}}
+    log_extra = {
+        "src_ip": "192.0.2.10",
+        "src_port": 4444,
+        "dst_ip": "198.51.100.20",
+        "dst_port": 22,
+        "task_name": "session-a",
+    }
 
-    await ssh_module.session_summary(FakeProcess(), llm_config, session, server)
-    await ssh_module.session_summary(FakeProcess(), llm_config, session, server)
+    await ssh_module.session_summary(FakeProcess(), llm_config, session, server, log_extra)
+    await ssh_module.session_summary(FakeProcess(), llm_config, session, server, log_extra)
 
     assert len(session.calls) == 1
     payload, config = session.calls[0]
@@ -373,5 +466,10 @@ async def test_session_summary_logs_judgement_once(tmp_path, ssh_module):
     records = [json.loads(line) for line in log_file.read_text().splitlines()]
     assert len(records) == 1
     assert records[0]["message"] == "Session summary"
+    assert records[0]["src_ip"] == "192.0.2.10"
+    assert records[0]["src_port"] == 4444
+    assert records[0]["dst_ip"] == "198.51.100.20"
+    assert records[0]["dst_port"] == 22
+    assert records[0]["task_name"] == "session-a"
     assert records[0]["details"].endswith("Judgement: MALICIOUS")
     assert records[0]["judgement"] == "MALICIOUS"
