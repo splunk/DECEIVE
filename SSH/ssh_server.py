@@ -27,7 +27,9 @@ from langchain_core.runnables import RunnablePassthrough
 from asyncssh.misc import ConnectionLost
 import socket
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 config = ConfigParser()
+config_base_dir = SCRIPT_DIR
 accounts = {}
 llm_sessions = {}
 thread_local = threading.local()
@@ -261,6 +263,18 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
     # Just in case we ever get here, which we probably shouldn't
     # process.exit(0)
 
+def resolve_runtime_path(path: str) -> str:
+    if os.path.isabs(path) or os.path.exists(path):
+        return path
+
+    for base_dir in (config_base_dir, SCRIPT_DIR):
+        candidate = os.path.join(base_dir, path)
+        if os.path.exists(candidate):
+            return candidate
+
+    return path
+
+
 async def start_server():
     return await asyncssh.listen(
         host=config['ssh'].get("listen_host", ""),
@@ -268,7 +282,7 @@ async def start_server():
         reuse_address=True,
         reuse_port=True,
         server_factory=MySSHServer,
-        server_host_keys=config['ssh'].get("host_priv_key", "ssh_host_key"),
+        server_host_keys=resolve_runtime_path(config['ssh'].get("host_priv_key", "ssh_host_key")),
         process_factory=lambda process: handle_client(process, MySSHServer()),
         server_version=config['ssh'].get("server_version_string", "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3")
     )
@@ -363,6 +377,7 @@ def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
             sys.exit(1)
         user_prompt = prompt
     elif prompt_file:
+        prompt_file = resolve_runtime_path(prompt_file)
         if not os.path.exists(prompt_file):
             print(f"Error: The specified prompt file '{prompt_file}' does not exist.", file=sys.stderr)
             sys.exit(1)
@@ -398,21 +413,26 @@ def parse_args(argv=None):
 
 
 def load_config(args) -> ConfigParser:
+    global config_base_dir
+
     loaded_config = ConfigParser()
     if args.config is not None:
         if not os.path.exists(args.config):
             print(f"Error: The specified config file '{args.config}' does not exist.", file=sys.stderr)
             sys.exit(1)
         loaded_config.read(args.config)
+        config_base_dir = os.path.dirname(os.path.abspath(args.config))
     else:
-        default_config = "config.ini"
+        default_config = resolve_runtime_path("config.ini")
         if os.path.exists(default_config):
             loaded_config.read(default_config)
+            config_base_dir = os.path.dirname(os.path.abspath(default_config))
         else:
             loaded_config['honeypot'] = {'log_file': 'ssh_log.log', 'sensor_name': socket.gethostname()}
             loaded_config['ssh'] = {'port': '8022', 'host_priv_key': 'ssh_host_key', 'server_version_string': 'SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3'}
             loaded_config['llm'] = {'llm_provider': 'openai', 'model_name': 'gpt-3.5-turbo', 'trimmer_max_tokens': '64000', 'temperature': '0.7', 'system_prompt': ''}
             loaded_config['user_accounts'] = {}
+            config_base_dir = SCRIPT_DIR
 
     return loaded_config
 
@@ -508,8 +528,9 @@ def build_message_history(llm_system_prompt: str, llm_user_prompt: str):
 
 
 def configure_runtime(args, message_history=None) -> None:
-    global accounts, config, llm_sessions, thread_local, with_message_history
+    global accounts, config, config_base_dir, llm_sessions, thread_local, with_message_history
 
+    config_base_dir = SCRIPT_DIR
     config = load_config(args)
     apply_args_to_config(args)
 

@@ -20,11 +20,15 @@ You can fetch the latest version using the following command:
 The rest of these instructions assume you have changed your current directory to the repo after cloning completes.
 
 ### Install Dependencies
-Ensure you have Python3 installed. We recommend running DECEIVE in it's own Python virtualenv but it is not required.
+DECEIVE uses [uv](https://docs.astral.sh/uv/getting-started/installation/) for Python dependency and virtual environment management. If you do not already have uv installed, install it with Astral's standalone installer:
 
-Next, install the Python modules the honeypot needs:
+    curl -LsSf https://astral.sh/uv/install.sh | sh
 
-    pip3 install -r requirements.txt
+Next, sync the project environment from the repository root:
+
+    uv sync
+
+The `pyproject.toml` and `uv.lock` files are the source of truth for dependencies. This project intentionally does not maintain a `requirements.txt` fallback.
 
 ### Generate the SSH Host Key
 
@@ -51,11 +55,15 @@ If you like, you can add whatever additional details you think will be helpful. 
 ## Running the Honeypot
 To start the DECEIVE honeypot server, first make sure that you have set any environment variables required by your chosen LLM backend.  For example, if you are using any of the OpenAI models, you will need to set the `OPENAI_API_KEY` variable like so:
 
-    export OPENAI_API_KEY="<your secret API key>
+    export OPENAI_API_KEY="<your secret API key>"
 
-Next, change to the `SSH` directory and run the following command:
+Next, run the SSH honeypot from the repository root:
 
-    python3 ./ssh_server.py
+    uv run python SSH/ssh_server.py
+
+You can also change to the `SSH` directory and run:
+
+    uv run python ssh_server.py
 
 The server will start and listen for incoming SSH connections on the configured port. It will not produce any output, but will stay executing in the foreground.
 
@@ -65,11 +73,15 @@ Once the server is running (this can take a few seconds), access it on the confi
     ssh guest@localhost -p 8022
 
 ## Running Automated Tests
-After installing the Python dependencies, run the integration tests from the repository root:
+After running `uv sync`, run all tests from the repository root:
 
-    python3 -m unittest discover -s tests
+    uv run pytest
 
-The integration tests start the real SSH server on a local random port, connect with an SSH client, and use a deterministic fake LLM backend so assertions do not depend on live model output.
+To run only the SSH integration tests:
+
+    uv run pytest tests/test_ssh_integration.py
+
+The integration tests start the real SSH server on a local random port, connect with an SSH client, and use a deterministic fake LLM backend so assertions do not depend on live model output. One concurrent log-attribution test is marked as an expected failure until that known bug is fixed.
 
 ### Logging
 Logs will be written to the file specified in the `log_file` configuration option. By default, this is `SSH/ssh_log.log`. 
