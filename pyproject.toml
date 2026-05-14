@@ -5,6 +5,7 @@ description = "AI-driven high-interaction SSH honeypot"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aiohttp",
     "asyncssh",
     "langchain",
     "langchain-community",

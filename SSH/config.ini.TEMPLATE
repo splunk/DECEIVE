@@ -1,6 +1,6 @@
-# THIS IS A TEMPLATE CONFIG FILE FOR HADES
-# We provide reasonable defaults for most configuration items, but you should 
-# review this before using it in production. 
+# Legacy SSH-only DECEIVE configuration template.
+# New multi-protocol deployments should start from ../config.ini.TEMPLATE.
+# Full configuration details are in ../docs/configuration.md.
 
 [honeypot]
 # The name of the file you wish to write the honeypot log to.
@@ -59,6 +59,10 @@ model_name = gpt-4o
 # Higher values (e.g., 0.8) make responses more creative and variable.
 # Default is 0.2.
 temperature = 0.2
+
+# Set tls_verify = false only when your outbound LLM client must connect
+# through an intercepting proxy or custom CA path that Python does not trust.
+tls_verify = true
 
 # The maximum number of tokens to send to the LLM backend in a single 
 # request. This includes the message history for the session, so should

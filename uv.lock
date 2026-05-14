@@ -564,6 +564,7 @@ name = "deceive"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "anthropic" },
     { name = "asyncssh" },
     { name = "langchain" },
@@ -584,6 +585,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp" },
     { name = "anthropic" },
     { name = "asyncssh" },
     { name = "langchain" },

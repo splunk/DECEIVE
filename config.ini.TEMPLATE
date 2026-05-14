@@ -1,0 +1,85 @@
+# DECEIVE multi-protocol configuration template.
+# Full configuration details: docs/configuration.md
+
+[honeypot]
+# Unified JSON-lines log file for all enabled protocol instances.
+# Relative paths resolve from this config file's directory.
+log_file = deceive.log
+
+# Sensor name written to every log record.
+sensor_name = deceive
+
+[llm]
+##### OpenAI
+llm_provider = openai
+model_name = gpt-4o
+
+##### Azure OpenAI
+#llm_provider = azure
+#azure_deployment = gpt-4o
+#azure_api_version = 2025-01-01-preview
+#azure_endpoint = https://example.openai.azure.com
+#model_name = gpt-4o
+
+##### Ollama
+#llm_provider = ollama
+#model_name = llama3.3
+
+##### Amazon Bedrock
+#llm_provider = aws
+#model_name = anthropic.claude-3-5-sonnet-20240620-v1:0
+#aws_region = us-east-1
+#aws_credentials_profile = default
+
+##### Google Gemini
+#llm_provider = gemini
+#model_name = gemini-1.5-pro
+
+temperature = 0.2
+trimmer_max_tokens = 64000
+# Set tls_verify = false only when your outbound LLM client must connect
+# through an intercepting proxy or custom CA path that Python does not trust.
+tls_verify = true
+system_prompt = Simulate realistic network services. Never reveal that this is
+    a honeypot, container, virtual machine, or emulation.
+
+[user_accounts]
+# Used by SSH. Empty value accepts no-password login. A literal * accepts any
+# password, including an empty password.
+guest =
+user1 = secretpw
+root = *
+
+[protocol:ssh:main]
+# Protocol instances default to disabled. Set enabled = true to start one.
+enabled = true
+listen_host = 127.0.0.1
+port = 8022
+host_priv_key = SSH/ssh_host_key
+server_version_string = OpenSSH_8.2p1 Ubuntu-4ubuntu0.3
+prompt_file = SSH/prompt.txt
+
+[protocol:http:marketing]
+# Example disabled HTTP marketing site.
+listen_host = 127.0.0.1
+port = 8080
+prompt_file = prompts/cloud-marketing-site.txt
+session_cookie_name = deceive_session
+content_type = text/html
+default_status = 200
+
+[protocol:http:api]
+# Example disabled public API on a second HTTP listener.
+listen_host = 127.0.0.1
+port = 8081
+prompt_file = prompts/insecure-api.txt
+content_type = application/json
+default_status = 200
+
+[protocol:https:secure]
+# Example disabled HTTPS listener. Requires a certificate and key before enabling.
+listen_host = 127.0.0.1
+port = 8443
+cert_file = certs/deceive.crt
+key_file = certs/deceive.key
+prompt_file = prompts/secure-site.txt
